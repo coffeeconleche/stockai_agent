@@ -15,12 +15,20 @@ class Config:
     # Webhook Configuration
     VERIFY_TOKEN: Optional[str] = os.getenv('VERIFY_TOKEN')
     
+    # OpenAI Configuration
+    OPENAI_API_KEY: Optional[str] = os.getenv('OPENAI_API_KEY')
+    OPENAI_TEXT_MODEL: str = os.getenv('OPENAI_TEXT_MODEL', 'gpt-4o-mini')
+    OPENAI_AUDIO_MODEL: str = os.getenv('OPENAI_AUDIO_MODEL', 'whisper-1')
+    OPENAI_IMAGE_MODEL: str = os.getenv('OPENAI_IMAGE_MODEL', 'gpt-4o')
+    
     # Database Configuration
     USERS_TABLE_NAME: str = os.getenv('USERS_TABLE_NAME', 'whatsapp-users')
+    TRANSACTIONS_TABLE_NAME: str = os.getenv('TRANSACTIONS_TABLE_NAME', 'whatsapp-transactions')
     AWS_REGION: str = os.getenv('AWS_REGION', 'us-east-1')
     
     # Application Configuration
     DEFAULT_LANGUAGE: str = 'es'  # Spanish
+    DEFAULT_CURRENCY: str = 'PEN'  # Peruvian Soles
     
     @classmethod
     def validate_required_config(cls) -> bool:
@@ -28,7 +36,8 @@ class Config:
         required_vars = [
             cls.WHATSAPP_ACCESS_TOKEN,
             cls.WHATSAPP_PHONE_NUMBER_ID,
-            cls.VERIFY_TOKEN
+            cls.VERIFY_TOKEN,
+            cls.OPENAI_API_KEY
         ]
         return all(var is not None for var in required_vars)
     
