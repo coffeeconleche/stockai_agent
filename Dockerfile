@@ -6,6 +6,7 @@ RUN pip install -r requirements.txt
 
 # Copy function code
 COPY app.py ${LAMBDA_TASK_ROOT}
+COPY src/ ${LAMBDA_TASK_ROOT}/src/
 
 # Set the CMD to your handler
 CMD ["app.lambda_handler"]

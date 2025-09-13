@@ -7,6 +7,10 @@ from typing import Dict, Any
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Import our modular services
+from src.config import Config
+from src.services import MessageService
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     AWS Lambda handler for WhatsApp webhook verification and message processing
@@ -40,7 +44,7 @@ def handle_webhook_verification(query_params: Dict[str, str]) -> Dict[str, Any]:
     """
     Handle WhatsApp webhook verification (GET request)
     """
-    verify_token = os.getenv('VERIFY_TOKEN')
+    verify_token = Config.VERIFY_TOKEN
     
     if not verify_token:
         logger.error("VERIFY_TOKEN environment variable not set")
@@ -83,8 +87,17 @@ def handle_webhook_message(event: Dict[str, Any]) -> Dict[str, Any]:
         
         logger.info("Received WhatsApp webhook message")
         
-        # For now, just acknowledge receipt
-        # TODO: Implement message processing logic
+        # Validate configuration
+        if not Config.validate_required_config():
+            logger.error("Required configuration missing")
+            return {
+                'statusCode': 500,
+                'body': json.dumps({'error': 'Server configuration error'})
+            }
+        
+        # Process message using our service
+        message_service = MessageService()
+        message_service.process_webhook_data(body)
         
         return {
             'statusCode': 200,
@@ -96,6 +109,12 @@ def handle_webhook_message(event: Dict[str, Any]) -> Dict[str, Any]:
         return {
             'statusCode': 400,
             'body': json.dumps({'error': 'Invalid JSON'})
+        }
+    except Exception as e:
+        logger.error(f"Error processing webhook message: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': 'Internal server error'})
         }
 
 # Test function locally - this won't run in Lambda

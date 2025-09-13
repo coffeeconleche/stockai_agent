@@ -283,3 +283,8 @@ ehthumbs.db
 
 # Project specific
 trust-policy.json
+dynamodb-policy.json
+
+# Keep src directory structure
+!src/
+!src/**/*.py
