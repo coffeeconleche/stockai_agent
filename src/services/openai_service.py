@@ -284,10 +284,10 @@ Ejemplos de JSON:
 
             result_text = response.text
 
-            # if result_text.startswith("```json\n"):
-            #     result_text = result_text[len("```json\n"):]
-            # if result_text.endswith("\n```"):
-            #     result_text = result_text[:-len("\n```")]
+            if result_text.startswith("```json\n"):
+                result_text = result_text[len("```json\n"):]
+            if result_text.endswith("\n```"):
+                result_text = result_text[:-len("\n```")]
 
             print(f"GeminiAI image response: {result_text}")
             # Try to parse JSON response
