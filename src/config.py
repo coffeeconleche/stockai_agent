@@ -17,10 +17,13 @@ class Config:
     
     # OpenAI Configuration
     OPENAI_API_KEY: Optional[str] = os.getenv('OPENAI_API_KEY')
-    OPENAI_TEXT_MODEL: str = os.getenv('OPENAI_TEXT_MODEL', 'gpt-4o-mini')
-    OPENAI_AUDIO_MODEL: str = os.getenv('OPENAI_AUDIO_MODEL', 'whisper-1')
-    OPENAI_IMAGE_MODEL: str = os.getenv('OPENAI_IMAGE_MODEL', 'gpt-4o')
-    
+    DEEPSEEK_API_KEY: Optional[str] = os.getenv('DEEPSEEK_API_KEY')
+    GEMINI_API_KEY: Optional[str] = os.getenv('GEMINI_API_KEY')
+    OPENAI_TEXT_MODEL: str = os.getenv('OPENAI_TEXT_MODEL', 'gpt-5-nano-2025-08-07')
+    OPENAI_AUDIO_MODEL: str = os.getenv('OPENAI_AUDIO_MODEL', 'gpt-4o-transcribe') # whisper-1
+    OPENAI_IMAGE_MODEL: str = os.getenv('OPENAI_IMAGE_MODEL', 'gpt-5-nano-2025-08-07')
+    GEMINI_IMAGE_MODEL: str = os.getenv('GEMINI_IMAGE_MODEL', 'gemini-2.5-flash')
+
     # Database Configuration
     USERS_TABLE_NAME: str = os.getenv('USERS_TABLE_NAME', 'whatsapp-users')
     TRANSACTIONS_TABLE_NAME: str = os.getenv('TRANSACTIONS_TABLE_NAME', 'whatsapp-transactions')

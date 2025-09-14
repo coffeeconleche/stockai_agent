@@ -131,29 +131,63 @@ class MessageService:
             result = self.openai_service.process_text_message(text_content)
             print(result)
             if result and "error" not in result:
-                # Create and save transaction
-                transaction = Transaction(
-                    phone_number=phone_number,
-                    transaction_type=result['transaction_type'],
-                    product=result['product'],
-                    product_variation=result['product_variation'],
-                    quantity=result['quantity'],
-                    quantity_units=result['quantity_units'],
-                    currency=result['currency'],
-                    cost=result['cost'],
-                    is_perishable=result['is_perishable'],
-                    raw_message=text_content,
-                    message_type='text'
-                )
-                
-                if self.transaction_repo.create_transaction(transaction):
-                    # Send success response with formatted data
-                    response = self.templates.format_transaction_response(result, user.language)
-                    self.whatsapp_service.send_text_message(phone_number, response)
+                # Handle multiple transactions
+                if "multiple_transactions" in result:
+                    success_count = 0
+                    responses = []
+                    
+                    for transaction_data in result["multiple_transactions"]:
+                        transaction = Transaction(
+                            phone_number=phone_number,
+                            transaction_type=transaction_data['transaction_type'],
+                            product=transaction_data['product'],
+                            product_variation=transaction_data['product_variation'],
+                            quantity=transaction_data['quantity'],
+                            quantity_units=transaction_data['quantity_units'],
+                            currency=transaction_data['currency'],
+                            cost=transaction_data['cost'],
+                            is_perishable=transaction_data['is_perishable'],
+                            raw_message=text_content,
+                            message_type='text'
+                        )
+                        
+                        if self.transaction_repo.create_transaction(transaction):
+                            success_count += 1
+                            response = self.templates.format_transaction_response(transaction_data, user.language)
+                            responses.append(response)
+                    
+                    if success_count > 0:
+                        # Send all successful transaction responses
+                        final_response = f"✅ Registré {success_count} transacciones:\n\n" + "\n\n---\n\n".join(responses)
+                        self.whatsapp_service.send_text_message(phone_number, final_response)
+                    else:
+                        error_msg = self.templates.get_error_message(user.language)
+                        self.whatsapp_service.send_text_message(phone_number, error_msg)
+                        
                 else:
-                    # Database error
-                    error_msg = self.templates.get_error_message(user.language)
-                    self.whatsapp_service.send_text_message(phone_number, error_msg)
+                    # Single transaction
+                    transaction = Transaction(
+                        phone_number=phone_number,
+                        transaction_type=result['transaction_type'],
+                        product=result['product'],
+                        product_variation=result['product_variation'],
+                        quantity=result['quantity'],
+                        quantity_units=result['quantity_units'],
+                        currency=result['currency'],
+                        cost=result['cost'],
+                        is_perishable=result['is_perishable'],
+                        raw_message=text_content,
+                        message_type='text'
+                    )
+                    
+                    if self.transaction_repo.create_transaction(transaction):
+                        # Send success response with formatted data
+                        response = self.templates.format_transaction_response(result, user.language)
+                        self.whatsapp_service.send_text_message(phone_number, response)
+                    else:
+                        # Database error
+                        error_msg = self.templates.get_error_message(user.language)
+                        self.whatsapp_service.send_text_message(phone_number, error_msg)
             else:
                 # AI couldn't process or error occurred
                 not_understood_msg = self.templates.get_not_understood_message(user.language)
@@ -218,27 +252,60 @@ class MessageService:
                     result = self.openai_service.process_text_message(transcribed_text)
                     
                     if result and "error" not in result:
-                        # Create and save transaction
-                        transaction = Transaction(
-                            phone_number=phone_number,
-                            transaction_type=result['transaction_type'],
-                            product=result['product'],
-                            product_variation=result['product_variation'],
-                            quantity=result['quantity'],
-                            quantity_units=result['quantity_units'],
-                            currency=result['currency'],
-                            cost=result['cost'],
-                            is_perishable=result['is_perishable'],
-                            raw_message=transcribed_text,
-                            message_type='audio'
-                        )
-                        
-                        if self.transaction_repo.create_transaction(transaction):
-                            response = self.templates.format_transaction_response(result, user.language)
-                            self.whatsapp_service.send_text_message(phone_number, response)
+                        # Handle multiple transactions
+                        if "multiple_transactions" in result:
+                            success_count = 0
+                            responses = []
+                            
+                            for transaction_data in result["multiple_transactions"]:
+                                transaction = Transaction(
+                                    phone_number=phone_number,
+                                    transaction_type=transaction_data['transaction_type'],
+                                    product=transaction_data['product'],
+                                    product_variation=transaction_data['product_variation'],
+                                    quantity=transaction_data['quantity'],
+                                    quantity_units=transaction_data['quantity_units'],
+                                    currency=transaction_data['currency'],
+                                    cost=transaction_data['cost'],
+                                    is_perishable=transaction_data['is_perishable'],
+                                    raw_message=transcribed_text,
+                                    message_type='audio'
+                                )
+                                
+                                if self.transaction_repo.create_transaction(transaction):
+                                    success_count += 1
+                                    response = self.templates.format_transaction_response(transaction_data, user.language)
+                                    responses.append(response)
+                            
+                            if success_count > 0:
+                                final_response = f"✅ Registré {success_count} transacciones:\n\n" + "\n\n---\n\n".join(responses)
+                                self.whatsapp_service.send_text_message(phone_number, final_response)
+                            else:
+                                error_msg = self.templates.get_error_message(user.language)
+                                self.whatsapp_service.send_text_message(phone_number, error_msg)
+                                
                         else:
-                            error_msg = self.templates.get_error_message(user.language)
-                            self.whatsapp_service.send_text_message(phone_number, error_msg)
+                            # Single transaction
+                            transaction = Transaction(
+                                phone_number=phone_number,
+                                transaction_type=result['transaction_type'],
+                                product=result['product'],
+                                product_variation=result['product_variation'],
+                                quantity=result['quantity'],
+                                quantity_units=result['quantity_units'],
+                                currency=result['currency'],
+                                cost=result['cost'],
+                                is_perishable=result['is_perishable'],
+                                raw_message=transcribed_text,
+                                message_type='audio'
+                            )
+                            
+                            if self.transaction_repo.create_transaction(transaction):
+                                response = self.templates.format_transaction_response(result, user.language)
+                                self.whatsapp_service.send_text_message(phone_number, response)
+                            else:
+                                error_msg = self.templates.get_error_message(user.language)
+                                self.whatsapp_service.send_text_message(phone_number, error_msg)
                     else:
                         not_understood_msg = self.templates.get_not_understood_message(user.language)
                         explanation = "\n\nAsegúrate de hablar claramente sobre una venta o compra."
@@ -274,38 +341,76 @@ class MessageService:
                 self.whatsapp_service.send_text_message(phone_number, error_msg)
                 return
             
-            # Get image URL for OpenAI processing
-            image_url = self._get_whatsapp_media_url(image_id)
-            if not image_url:
+            # Download image file from WhatsApp
+            image_file_path = self._download_whatsapp_media(image_id)
+            if not image_file_path:
                 error_msg = self.templates.get_error_message(user.language)
                 self.whatsapp_service.send_text_message(phone_number, error_msg)
                 return
             
-            # Process image with OpenAI
-            result = self.openai_service.process_image_message(image_url)
+            try:
+                # Process image with OpenAI
+                result = self.openai_service.process_image_message(image_file_path)
+            finally:
+                # Clean up temporary file
+                if os.path.exists(image_file_path):
+                    os.remove(image_file_path)
             
             if result and "error" not in result:
-                # Create and save transaction
-                transaction = Transaction(
-                    phone_number=phone_number,
-                    transaction_type=result['transaction_type'],
-                    product=result['product'],
-                    product_variation=result['product_variation'],
-                    quantity=result['quantity'],
-                    quantity_units=result['quantity_units'],
-                    currency=result['currency'],
-                    cost=result['cost'],
-                    is_perishable=result['is_perishable'],
-                    raw_message="[Imagen procesada]",
-                    message_type='image'
-                )
-                
-                if self.transaction_repo.create_transaction(transaction):
-                    response = self.templates.format_transaction_response(result, user.language)
-                    self.whatsapp_service.send_text_message(phone_number, response)
+                # Handle multiple transactions
+                if "multiple_transactions" in result:
+                    success_count = 0
+                    responses = []
+                    
+                    for transaction_data in result["multiple_transactions"]:
+                        transaction = Transaction(
+                            phone_number=phone_number,
+                            transaction_type=transaction_data['transaction_type'],
+                            product=transaction_data['product'],
+                            product_variation=transaction_data['product_variation'],
+                            quantity=transaction_data['quantity'],
+                            quantity_units=transaction_data['quantity_units'],
+                            currency=transaction_data['currency'],
+                            cost=transaction_data['cost'],
+                            is_perishable=transaction_data['is_perishable'],
+                            raw_message="[Imagen procesada]",
+                            message_type='image'
+                        )
+                        
+                        if self.transaction_repo.create_transaction(transaction):
+                            success_count += 1
+                            response = self.templates.format_transaction_response(transaction_data, user.language)
+                            responses.append(response)
+                    
+                    if success_count > 0:
+                        final_response = f"✅ Registré {success_count} transacciones:\n\n" + "\n\n---\n\n".join(responses)
+                        self.whatsapp_service.send_text_message(phone_number, final_response)
+                    else:
+                        error_msg = self.templates.get_error_message(user.language)
+                        self.whatsapp_service.send_text_message(phone_number, error_msg)
+                        
                 else:
-                    error_msg = self.templates.get_error_message(user.language)
-                    self.whatsapp_service.send_text_message(phone_number, error_msg)
+                    # Single transaction
+                    transaction = Transaction(
+                        phone_number=phone_number,
+                        transaction_type=result['transaction_type'],
+                        product=result['product'],
+                        product_variation=result['product_variation'],
+                        quantity=result['quantity'],
+                        quantity_units=result['quantity_units'],
+                        currency=result['currency'],
+                        cost=result['cost'],
+                        is_perishable=result['is_perishable'],
+                        raw_message="[Imagen procesada]",
+                        message_type='image'
+                    )
+                    
+                    if self.transaction_repo.create_transaction(transaction):
+                        response = self.templates.format_transaction_response(result, user.language)
+                        self.whatsapp_service.send_text_message(phone_number, response)
+                    else:
+                        error_msg = self.templates.get_error_message(user.language)
+                        self.whatsapp_service.send_text_message(phone_number, error_msg)
             else:
                 not_understood_msg = self.templates.get_not_understood_message(user.language)
                 explanation = "\n\nAsegúrate de que la imagen contenga información clara de ventas o compras."
@@ -343,8 +448,22 @@ class MessageService:
             if media_response.status_code != 200:
                 return None
             
+            # Determine file extension based on content type or default
+            content_type = media_response.headers.get('content-type', '')
+            if 'image' in content_type:
+                if 'jpeg' in content_type or 'jpg' in content_type:
+                    suffix = '.jpg'
+                elif 'png' in content_type:
+                    suffix = '.png'
+                elif 'webp' in content_type:
+                    suffix = '.webp'
+                else:
+                    suffix = '.jpg'  # Default for images
+            else:
+                suffix = '.ogg'  # Default for audio
+            
             # Save to temporary file
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.ogg')
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
             temp_file.write(media_response.content)
             temp_file.close()
             

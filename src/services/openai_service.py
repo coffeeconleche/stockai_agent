@@ -1,11 +1,13 @@
 """
 OpenAI service for processing messages
 """
-import openai
+from openai import OpenAI
 import json
 import logging
 from typing import Dict, Any, Optional
 from src.config import Config
+from google.genai import types
+from google import genai
 
 logger = logging.getLogger(__name__)
 
@@ -13,75 +15,147 @@ class OpenAIService:
     """Service for OpenAI API operations"""
     
     def __init__(self):
-        openai.api_key = Config.OPENAI_API_KEY
+        #openai.api_key = 
         self.text_model = Config.OPENAI_TEXT_MODEL
         self.audio_model = Config.OPENAI_AUDIO_MODEL
-        self.image_model = Config.OPENAI_IMAGE_MODEL
+        self.image_model = Config.GEMINI_IMAGE_MODEL
+        self.client = OpenAI(api_key=Config.OPENAI_API_KEY)
+        self.deepseek_client = OpenAI(api_key=Config.DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+        self.gemini_client = genai.Client(api_key=Config.GEMINI_API_KEY)
     
     def process_text_message(self, text_content: str) -> Optional[Dict[str, Any]]:
         """Process text message and extract transaction data"""
         try:
             system_prompt = """Eres un asistente especializado en procesar registros de ventas y compras para pequeños negocios en Perú.
-
-Tu tarea es extraer y parametrizar la siguiente información de los mensajes en español:
+Los mensajes pueden contenter registros de más de un producto.
+Tu tarea es extraer y parametrizar la siguiente información por producto de los mensajes en español:
 
 1. transaction_type: 0 para compra (del proveedor), 1 para venta (al cliente)
-2. product: El producto general (ej: "camisa roja" → "camisa", "leche de cabra" → "leche de cabra")
+2. product: El producto general en singular (ej: "camisa roja" → "camisa", "leche de cabra" → "leche de cabra")
 3. product_variation: Variaciones como color, tamaño, marca, etc. (ej: "camisa roja" → "roja")
 4. quantity: Cantidad numérica
-5. quantity_units: Unidades (kg, piezas, litros, etc.)
+5. quantity_units: Unidades en sistema internacional si es una medida del SI o en singular si es otra medida (kg, pieza, litros, etc.)
 6. currency: Moneda (por defecto PEN - soles peruanos)
-7. cost: Precio total (ej: "3 camisas a 30 soles cada una" → 90)
-8. is_perishable: 0 para no perecedero, 1 para perecedero (comida, etc.)
+7. cost: **Costo total** de la transacción del producto. **NO es el precio unitario.** 
+   - Si el mensaje dice "a X soles cada una" → multiplicar cantidad × precio unitario
+   - Si el mensaje dice "por X soles" o "a X soles" sin "cada/c/u" → es el monto total
+   - Ejemplo: "6 manzanas a 5 soles cada una" → cost: 30
+   - Ejemplo: "3 camisas a 15 soles" → cost: 15 (se asume que es el total)
+8. is_perishable: 0 para no perecedero como objetos, 1 para perecedero (comida, etc.)
 
 IMPORTANTE: 
+- Si hay MÚLTIPLES transacciones en el mensaje, devuelve un array JSON con cada transacción
+- Si hay UNA sola transacción, devuelve un objeto JSON
 - Si el mensaje NO es sobre ventas o compras, responde con {"error": "not_business_transaction"}
 - Si falta información crítica, responde con {"error": "insufficient_information"}
 - Siempre responde en formato JSON válido (no devuelvas el tag de json como código, solo texto)
 
-Ejemplos:
-- "Vendí 5 camisas rojas a 25 soles cada una" → transaction_type: 1, product: "camisa", product_variation: "roja", quantity: 5, quantity_units: "piezas", cost: 125
-- "Compré 2 kg de manzanas a 8 soles el kilo" → transaction_type: 0, product: "manzana", quantity: 2, quantity_units: "kg", cost: 16, is_perishable: 1"""
+Ejemplos de JSON:
+- Una venta: {"transaction_type": 1, "product": "camisa", "product_variation": "roja", "quantity": 5, "quantity_units": "piezas", "cost": 125, "is_perishable": 0}
+- Múltiples transacciones: [{"transaction_type": 1, "product": "camisa", "quantity": 3, "cost": 30, "is_perishable": 0}, {"transaction_type": 1, "product": "manzana", "quantity": 6, "cost": 30, "is_perishable": 1}]
 
+"""
+
+# Ejemplos:
+# - "Vendí 5 camisas rojas a 25 soles cada una" → {"transaction_type": 1, "product": "camisa", "product_variation": "roja", "quantity": 5, "quantity_units": "piezas", "cost": 125, "is_perishable": 0}
+# - "Hoy vendí 3 camisas a 30 soles. También vendí 6 manzanas a 5 soles cada una" → [{"transaction_type": 1, "product": "camisa", "quantity": 3, "cost": 30, "is_perishable": 0}, {"transaction_type": 1, "product": "manzana", "quantity": 6, "cost": 30, "is_perishable": 1}]
+
+##Por defecto, es el precio mencionado por el usuario. Solo en el caso ESPECÍFICO que se mencione EXPLÍCITAMENTE las palabras "cada uno, cada una, por unidad, por pieza" entonces tienes que multiplicar la cantidad por ese precio unitario para dar el precio total.
             user_prompt = f"Procesa este mensaje: '{text_content}'"
             
-            response = openai.chat.completions.create(
-                model=self.text_model,
+            #response = self.client.chat.completions.create(
+            # response = self.client.responses.create(
+            #     model=self.text_model,
+            #     input=[
+            #         {"role": "system", "content": system_prompt},
+            #         {"role": "user", "content": user_prompt}
+            #     ],
+            #     text={
+            #         "format": {
+            #         "type": "text"
+            #         },
+            #         "verbosity": "low"
+            #     },
+            #     reasoning={
+            #         "effort": "minimal"
+            #     },
+            #     tools=[]
+            # )
+            
+            response = self.deepseek_client.chat.completions.create(
+                model="deepseek-chat",
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
+                    {"role": "user", "content": user_prompt},
                 ],
-                temperature=0.1,
-                max_tokens=500
+                stream=False
             )
-            
-            result_text = response.choices[0].message.content.strip()
-            
+
+            #print(response.choices[0].message.content)
+
+  
+            #result_text = response.output_text
+            result_text = response.choices[0].message.content
+
+            print(f"Deepseek response: {result_text}")
             # Try to parse JSON response
             try:
                 result = json.loads(result_text)
                 
-                # Check for errors
-                if "error" in result:
-                    return {"error": result["error"]}
+                # Handle multiple transactions (array) or single transaction (object)
+                if isinstance(result, list):
+                    # Multiple transactions - process each one
+                    processed_transactions = []
+                    for transaction in result:
+                        if "error" in transaction:
+                            continue  # Skip error transactions
+                        
+                        processed_data = {
+                            "transaction_type": transaction.get("transaction_type", 0),
+                            "product": transaction.get("product", "").strip(),
+                            "product_variation": transaction.get("product_variation", "") or "",  # Handle None
+                            "quantity": float(transaction.get("quantity", 0)),
+                            "quantity_units": transaction.get("quantity_units", "piezas").strip(),
+                            "currency": transaction.get("currency", "PEN").strip(),
+                            "cost": float(transaction.get("cost", 0)),
+                            "is_perishable": transaction.get("is_perishable", 0)
+                        }
+                        
+                        # Strip only if it's a string (not None)
+                        if isinstance(processed_data["product_variation"], str):
+                            processed_data["product_variation"] = processed_data["product_variation"].strip()
+                        # Basic validation
+                        if processed_data["product"] and processed_data["quantity"] > 0 and processed_data["cost"] > 0:
+                            processed_transactions.append(processed_data)
+                    
+                    return {"multiple_transactions": processed_transactions} if processed_transactions else {"error": "insufficient_information"}
                 
-                # Validate and set defaults
-                processed_data = {
-                    "transaction_type": result.get("transaction_type", 0),
-                    "product": result.get("product", "").strip(),
-                    "product_variation": result.get("product_variation", "").strip(),
-                    "quantity": float(result.get("quantity", 0)),
-                    "quantity_units": result.get("quantity_units", "piezas").strip(),
-                    "currency": result.get("currency", "PEN").strip(),
-                    "cost": float(result.get("cost", 0)),
-                    "is_perishable": result.get("is_perishable", 0)
-                }
-                
-                # Basic validation
-                if not processed_data["product"] or processed_data["quantity"] <= 0 or processed_data["cost"] <= 0:
-                    return {"error": "insufficient_information"}
-                
-                return processed_data
+                else:
+                    # Single transaction
+                    # Check for errors
+                    if "error" in result:
+                        return {"error": result["error"]}
+                    
+                    # Validate and set defaults
+                    processed_data = {
+                        "transaction_type": result.get("transaction_type", 0),
+                        "product": result.get("product", "").strip(),
+                        "product_variation": result.get("product_variation", "") or "",  # Handle None
+                        "quantity": float(result.get("quantity", 0)),
+                        "quantity_units": result.get("quantity_units", "piezas").strip(),
+                        "currency": result.get("currency", "PEN").strip(),
+                        "cost": float(result.get("cost", 0)),
+                        "is_perishable": result.get("is_perishable", 0)
+                    }
+                    
+                    # Strip only if it's a string (not None)
+                    if isinstance(processed_data["product_variation"], str):
+                        processed_data["product_variation"] = processed_data["product_variation"].strip()
+                    # Basic validation
+                    if not processed_data["product"] or processed_data["quantity"] <= 0 or processed_data["cost"] <= 0:
+                        return {"error": "insufficient_information"}
+                    
+                    return processed_data
                 
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse OpenAI JSON response: {result_text}")
@@ -95,90 +169,185 @@ Ejemplos:
         """Transcribe audio file to text"""
         try:
             with open(audio_file_path, 'rb') as audio_file:
-                response = openai.audio.transcriptions.create(
+                response = self.client.audio.transcriptions.create(
                     model=self.audio_model,
                     file=audio_file,
+                    response_format="text",
+                    prompt="El siguiente audio es de una persona que está interactuando con un agente de IA que le ayuda a administrar sus inventarios de compras o ventas.",
                     language="es"  # Spanish
                 )
-                
-            return response.text
+            
+            print(f"Transcribe from audio: {response}")
+            return response
             
         except Exception as e:
             logger.error(f"Error transcribing audio: {str(e)}")
             return None
     
-    def process_image_message(self, image_url: str) -> Optional[Dict[str, Any]]:
-        """Process image and extract transaction data"""
+    def process_image_message(self, image_file_path: str) -> Optional[Dict[str, Any]]:
+        """Process image file and extract transaction data"""
         try:
+            import base64
+            
+
+            #OpenAI
+            # Read and encode image file
+            # with open(image_file_path, 'rb') as image_file:
+            #     image_data = base64.b64encode(image_file.read()).decode('utf-8')
+            
+            # # Determine image format
+            # image_format = "jpeg"
+            # if image_file_path.lower().endswith('.png'):
+            #     image_format = "png"
+            # elif image_file_path.lower().endswith('.webp'):
+            #     image_format = "webp"
+            
+            with open(image_file_path, 'rb') as f:
+                image_bytes = f.read()
+
+            # Determine image format
+            image_format = "jpeg"
+            if image_file_path.lower().endswith('.png'):
+                image_format = "png"
+            elif image_file_path.lower().endswith('.webp'):
+                image_format = "webp"
+
             system_prompt = """Eres un asistente que analiza imágenes de registros de ventas y compras escritos a mano o impresos.
 
-Extrae la información de transacciones comerciales de la imagen y devuelve los datos en el mismo formato JSON que usas para texto (no devuelvas en formato de código de json, solo texto):
+Estás especializado en procesar registros de ventas y compras para pequeños negocios en Perú.
+Las imágenes pueden contenter registros de más de un producto.
+Tu tarea es extraer y parametrizar la siguiente información por producto de las imágenes en español:
 
-1. transaction_type: 0 para compra, 1 para venta
-2. product: Producto general
-3. product_variation: Variaciones (color, tamaño, etc.)
+1. transaction_type: 0 para compra (del proveedor), 1 para venta (al cliente)
+2. product: El producto general en singular (ej: "camisa roja" → "camisa", "leche de cabra" → "leche de cabra")
+3. product_variation: Variaciones como color, tamaño, marca, etc. (ej: "camisa roja" → "roja")
 4. quantity: Cantidad numérica
-5. quantity_units: Unidades
-6. currency: Moneda (por defecto PEN)
-7. cost: Precio total
-8. is_perishable: 0 o 1
+5. quantity_units: Unidades en el Sistema Internacional (SI) y siempre en singular (ej: kg, litros, metros). Si se mencionan unidades más pequeñas (como gramos, mililitros), se deben convertir a su equivalente en el SI (ej: "200 gramos" → quantity: 0.2, quantity_units: "kg"; "700 mililitros" → quantity: 0.7, quantity_units: "litro").
+6. currency: Moneda (por defecto PEN - soles peruanos)
+7. cost: **Costo total** de la transacción del producto. **NO es el precio unitario.** 
+   - Si el mensaje dice "a X soles cada una" → multiplicar cantidad × precio unitario
+   - Si el mensaje dice "por X soles" o "a X soles" sin "cada/c/u" → es el monto total
+   - Ejemplo: "6 manzanas a 5 soles cada una" → cost: 30
+   - Ejemplo: "3 camisas a 15 soles" → cost: 15 (se asume que es el total)
+8. is_perishable: 0 para no perecedero como objetos, 1 para perecedero (comida, etc.)
 
-Si la imagen NO contiene información de ventas/compras o no se puede leer claramente, responde con {"error": "not_business_transaction"} o {"error": "insufficient_information"}."""
+IMPORTANTE: 
+- Si hay MÚLTIPLES transacciones en la imagen, devuelve un array JSON con cada transacción
+- Si hay UNA sola transacción, devuelve un objeto JSON
+- Si la imagen NO contiene información de ventas/compras o no se puede leer claramente, responde con {"error": "not_business_transaction"} o {"error": "insufficient_information"}
+- Siempre responde en formato JSON válido. NO INCLUYAS NINGÚN BLOQUE DE CÓDIGO (```json) EN LA RESPUESTA, SOLO EL TEXTO JSON DIRECTO.
 
-            response = openai.chat.completions.create(
+Ejemplos de JSON:
+- Una venta: {"transaction_type": 1, "product": "camisa", "product_variation": "roja", "quantity": 5, "quantity_units": "piezas", "cost": 125, "is_perishable": 0}
+- Múltiples transacciones: [{"transaction_type": 1, "product": "camisa", "quantity": 3, "cost": 30, "is_perishable": 0}, {"transaction_type": 1, "product": "manzana", "quantity": 6, "cost": 30, "is_perishable": 1}]
+"""
+
+            #response = self.client.chat.completions.create(
+            # response = self.client.responses.create(
+            #     model=self.image_model,
+            #     input=[
+            #         {
+            #             "role": "system", 
+            #             #"content": system_prompt
+            #             "content": [{"type": "input_text", "text": system_prompt}]
+            #         },
+            #         {
+            #             "role": "user",
+            #             "content": [
+            #                 {
+            #                     "type": "input_text",
+            #                     "text": "Analiza esta imagen y extrae la información de transacciones comerciales:"
+            #                 },
+            #                 {
+            #                     "type": "input_image",
+            #                     "image_url": f"data:image/{image_format};base64,{image_data}"
+                                
+            #                 }
+            #             ]
+            #         }
+            #     ]
+                
+            # )
+            
+            # result_text = response.output_text
+
+            response = self.gemini_client.models.generate_content(
                 model=self.image_model,
-                messages=[
-                    {
-                        "role": "system", 
-                        "content": system_prompt
-                    },
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": "Analiza esta imagen y extrae la información de transacciones comerciales:"
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": image_url
-                                }
-                            }
-                        ]
-                    }
-                ],
-                temperature=0.1,
-                max_tokens=500
+                contents=[
+                types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type=f"image/{image_format}",
+                ),
+                system_prompt
+                ]
             )
-            
-            result_text = response.choices[0].message.content.strip()
-            
+
+            result_text = response.text
+
+            # if result_text.startswith("```json\n"):
+            #     result_text = result_text[len("```json\n"):]
+            # if result_text.endswith("\n```"):
+            #     result_text = result_text[:-len("\n```")]
+
+            print(f"GeminiAI image response: {result_text}")
             # Try to parse JSON response
             try:
                 result = json.loads(result_text)
                 
-                # Check for errors
-                if "error" in result:
-                    return {"error": result["error"]}
+                # Handle multiple transactions (array) or single transaction (object)
+                if isinstance(result, list):
+                    # Multiple transactions - process each one
+                    processed_transactions = []
+                    for transaction in result:
+                        if "error" in transaction:
+                            continue  # Skip error transactions
+                        
+                        processed_data = {
+                            "transaction_type": transaction.get("transaction_type", 0),
+                            "product": transaction.get("product", "").strip(),
+                            "product_variation": transaction.get("product_variation", "") or "",  # Handle None
+                            "quantity": float(transaction.get("quantity", 0)),
+                            "quantity_units": transaction.get("quantity_units", "piezas").strip(),
+                            "currency": transaction.get("currency", "PEN").strip(),
+                            "cost": float(transaction.get("cost", 0)),
+                            "is_perishable": transaction.get("is_perishable", 0)
+                        }
+                        
+                        # Strip only if it's a string (not None)
+                        if isinstance(processed_data["product_variation"], str):
+                            processed_data["product_variation"] = processed_data["product_variation"].strip()
+
+                        # Basic validation
+                        if processed_data["product"] and processed_data["quantity"] > 0 and processed_data["cost"] > 0:
+                            processed_transactions.append(processed_data)
+                    
+                    return {"multiple_transactions": processed_transactions} if processed_transactions else {"error": "insufficient_information"}
                 
-                # Validate and set defaults (same as text processing)
-                processed_data = {
-                    "transaction_type": result.get("transaction_type", 0),
-                    "product": result.get("product", "").strip(),
-                    "product_variation": result.get("product_variation", "").strip(),
-                    "quantity": float(result.get("quantity", 0)),
-                    "quantity_units": result.get("quantity_units", "piezas").strip(),
-                    "currency": result.get("currency", "PEN").strip(),
-                    "cost": float(result.get("cost", 0)),
-                    "is_perishable": result.get("is_perishable", 0)
-                }
-                
-                # Basic validation
-                if not processed_data["product"] or processed_data["quantity"] <= 0 or processed_data["cost"] <= 0:
-                    return {"error": "insufficient_information"}
-                
-                return processed_data
+                else:
+                    # Single transaction
+                    # Check for errors
+                    if "error" in result:
+                        return {"error": result["error"]}
+                    
+                    # Validate and set defaults (same as text processing)
+                    processed_data = {
+                        "transaction_type": result.get("transaction_type", 0),
+                        "product": result.get("product", "").strip(),
+                        "product_variation": result.get("product_variation", "") or "",  # Handle None
+                        "quantity": float(result.get("quantity", 0)),
+                        "quantity_units": result.get("quantity_units", "piezas").strip(),
+                        "currency": result.get("currency", "PEN").strip(),
+                        "cost": float(result.get("cost", 0)),
+                        "is_perishable": result.get("is_perishable", 0)
+                    }
+                    # Strip only if it's a string (not None)
+                    if isinstance(processed_data["product_variation"], str):
+                        processed_data["product_variation"] = processed_data["product_variation"].strip()
+                    # Basic validation
+                    if not processed_data["product"] or processed_data["quantity"] <= 0 or processed_data["cost"] <= 0:
+                        return {"error": "insufficient_information"}
+                    
+                    return processed_data
                 
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse OpenAI JSON response from image: {result_text}")
