@@ -96,3 +96,49 @@ class WhatsAppService:
         except Exception as e:
             logger.error(f"Error sending WhatsApp template message to {to_phone}: {str(e)}")
             return False
+    
+    def send_interactive_message(self, to_phone: str, message_text: str, button_text: str, button_url: str) -> bool:
+        """Send an interactive message with a CTA URL button"""
+        try:
+            if not self.access_token or not self.phone_number_id:
+                logger.error("WhatsApp API credentials not configured")
+                return False
+            
+            url = f"{self.api_url}/messages"
+            
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'messaging_product': 'whatsapp',
+                'to': to_phone.replace('+', ''),
+                'type': 'interactive',
+                'interactive': {
+                    'type': 'cta_url',
+                    'body': {
+                        'text': message_text
+                    },
+                    'action': {
+                        'name': 'cta_url',
+                        'parameters': {
+                            'display_text': button_text,
+                            'url': button_url
+                        }
+                    }
+                }
+            }
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                logger.info(f"Interactive CTA message sent successfully to {to_phone}")
+                return True
+            else:
+                logger.error(f"Failed to send interactive CTA message to {to_phone}: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error sending WhatsApp interactive CTA message to {to_phone}: {str(e)}")
+            return False

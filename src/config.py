@@ -27,6 +27,7 @@ class Config:
     # Database Configuration
     USERS_TABLE_NAME: str = os.getenv('USERS_TABLE_NAME', 'whatsapp-users')
     TRANSACTIONS_TABLE_NAME: str = os.getenv('TRANSACTIONS_TABLE_NAME', 'whatsapp-transactions')
+    AUTHORIZED_USERS_TABLE_NAME: str = os.getenv('AUTHORIZED_USERS_TABLE_NAME', 'whatsapp-authorized-users')
     AWS_REGION: str = os.getenv('AWS_REGION', 'us-east-1')
     
     # Application Configuration

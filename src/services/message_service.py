@@ -6,7 +6,7 @@ import requests
 import tempfile
 import os
 from typing import Dict, Any
-from src.models import User, UserRepository, Transaction, TransactionRepository
+from src.models import User, UserRepository, Transaction, TransactionRepository, AuthorizedUser, AuthorizedUserRepository
 from src.services.whatsapp_service import WhatsAppService
 from src.services.openai_service import OpenAIService
 from src.utils.message_templates import MessageTemplates
@@ -19,6 +19,7 @@ class MessageService:
     def __init__(self):
         self.user_repo = UserRepository()
         self.transaction_repo = TransactionRepository()
+        self.authorized_user_repo = AuthorizedUserRepository()
         self.whatsapp_service = WhatsAppService()
         self.openai_service = OpenAIService()
         self.templates = MessageTemplates()
@@ -57,11 +58,16 @@ class MessageService:
                 # Normalize phone number
                 normalized_phone = User._normalize_phone_number(sender_phone)
                 
-                # Check if user exists
+                # First check if user is authorized
+                if not self.authorized_user_repo.is_user_authorized(normalized_phone):
+                    self._handle_unauthorized_user(normalized_phone, message)
+                    return
+                
+                # Check if user exists in our system
                 user = self.user_repo.get_user(normalized_phone)
                 
                 if not user:
-                    # New user flow
+                    # New authorized user flow
                     self._handle_new_user(normalized_phone, message_data)
                 else:
                     # Existing user flow
@@ -69,6 +75,30 @@ class MessageService:
                     
         except Exception as e:
             logger.error(f"Error processing message change: {str(e)}")
+    
+    def _handle_unauthorized_user(self, phone_number: str, message: Dict[str, Any]) -> None:
+        """Handle message from unauthorized user"""
+        try:
+            # Send unauthorized message with CTA registration button
+            unauthorized_message = """✨ ¡Bienvenido a StockAI! 👋
+Soy tu asistente inteligente para la optimización de inventarios, diseñado para ser potente, sencillo y práctico.
+
+Con StockAI podrás ahorrar dinero, reducir desperdicios y contribuir a la economía circular en tu negocio. 🌱💰
+
+Actualmente no cuentas con una licencia activa.
+👉 Para comenzar a aprovechar todos estos beneficios, haz clic en 'Registrarme' y activa tu acceso."""
+            
+            self.whatsapp_service.send_interactive_message(
+                phone_number, 
+                unauthorized_message, 
+                "Registrarme", 
+                "https://stockai.cloud/"
+            )
+            
+            logger.info(f"Handled unauthorized user: {phone_number}")
+            
+        except Exception as e:
+            logger.error(f"Error handling unauthorized user {phone_number}: {str(e)}")
     
     def _handle_new_user(self, phone_number: str, message_data: Dict[str, Any]) -> None:
         """Handle new user registration and welcome message"""
