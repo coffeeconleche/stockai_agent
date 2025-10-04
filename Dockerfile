@@ -1,5 +1,7 @@
 FROM public.ecr.aws/lambda/python:3.12
 
+ENV PYTHONUNBUFFERED=1
+
 # Install fonts for proper Unicode/Spanish character support
 RUN microdnf install -y dejavu-sans-fonts dejavu-serif-fonts fontconfig && \
     microdnf clean all

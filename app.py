@@ -1,4 +1,5 @@
 import json
+import sys
 import os
 import logging
 from typing import Dict, Any
@@ -15,6 +16,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     AWS Lambda handler for WhatsApp webhook verification and message processing
     """
+    print("PRINT: entered", flush=True)
+    logging.info("LOGGER: info alive")
+    sys.stderr.write("STDERR: line\n"); sys.stderr.flush()
     try:
         # Lambda Function URLs use different event structure than API Gateway
         http_method = event.get('requestContext', {}).get('http', {}).get('method', '')

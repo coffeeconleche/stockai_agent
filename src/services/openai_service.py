@@ -96,6 +96,13 @@ Ejemplos de JSON:
   
             #result_text = response.output_text
             result_text = response.choices[0].message.content
+            
+            if result_text.startswith("```json\n"):
+                result_text = result_text[len("```json\n"):]
+            if result_text.endswith("\n```"):
+                result_text = result_text[:-len("\n```")]
+
+            
 
             print(f"Deepseek response: {result_text}")
             # Try to parse JSON response

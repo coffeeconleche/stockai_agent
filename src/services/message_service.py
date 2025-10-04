@@ -107,13 +107,25 @@ Actualmente no cuentas con una licencia activa.
     def _send_transaction_response(self, phone_number: str, transactions: List[Dict[str, Any]], user: User) -> None:
         """Send transaction response based on configured mode (text or image)"""
         try:
+            # Determine response mode
+            use_image = False
+            
             if self.response_mode == 'image':
+                use_image = True
+            elif self.response_mode == 'auto':
+                # Use image if transactions exceed threshold
+                use_image = len(transactions) > Config.TRANSACTION_THRESHOLD
+            # else: use_image = False (text mode)
+            
+            if use_image:
                 # Generate and send image
                 image_url = self.image_service.generate_transaction_image(transactions)
                 
                 if image_url:
                     caption = f"✅ Registré {len(transactions)} transacción{'es' if len(transactions) > 1 else ''}"
                     self.whatsapp_service.send_image_message(phone_number, image_url, caption)
+                    # Send confirmation buttons
+                    self._send_confirmation_buttons(phone_number)
                 else:
                     # Fallback to text if image generation fails
                     logger.warning("Image generation failed, falling back to text response")
@@ -141,9 +153,60 @@ Actualmente no cuentas con una licencia activa.
             else:
                 response = self.templates.format_transaction_response(transactions[0], user.language)
                 self.whatsapp_service.send_text_message(phone_number, response)
+            
+            # Send confirmation buttons
+            self._send_confirmation_buttons(phone_number)
                 
         except Exception as e:
             logger.error(f"Error sending text response: {str(e)}")
+    
+    def _send_confirmation_buttons(self, phone_number: str) -> None:
+        """Send confirmation buttons for transaction verification"""
+        try:
+            confirmation_message = "Si los productos están correctamente identificados, click en *Confirmar*. Caso contrario, click en *Editar*."
+            
+            self.whatsapp_service.send_reply_buttons(
+                phone_number,
+                confirmation_message,
+                [
+                    {"id": "confirm_transaction", "title": "Confirmar"},
+                    {"id": "edit_transaction", "title": "Editar"}
+                ]
+            )
+            
+        except Exception as e:
+            logger.error(f"Error sending confirmation buttons: {str(e)}")
+    
+    def _process_button_response(self, phone_number: str, message: Dict[str, Any], user: User) -> None:
+        """Process button click responses"""
+        try:
+            button_reply = message.get('interactive', {}).get('button_reply', {})
+            button_id = button_reply.get('id', '')
+            
+            if button_id == 'confirm_transaction':
+                # User confirmed the transactions
+                confirmation_msg = "✅ ¡Perfecto! Tus transacciones han sido confirmadas y guardadas correctamente."
+                self.whatsapp_service.send_text_message(phone_number, confirmation_msg)
+                logger.info(f"User {phone_number} confirmed transactions")
+                
+            elif button_id == 'edit_transaction':
+                # User wants to edit
+                edit_msg = """📝 Para editar, por favor envía nuevamente la información correcta.
+
+Puedes enviar:
+• Un mensaje de texto con los detalles
+• Un mensaje de voz
+• Una foto de tu registro
+
+Ejemplo: "Vendí 5 camisas rojas a 25 soles cada una" """
+                self.whatsapp_service.send_text_message(phone_number, edit_msg)
+                logger.info(f"User {phone_number} requested to edit transactions")
+            
+            else:
+                logger.warning(f"Unknown button ID: {button_id}")
+                
+        except Exception as e:
+            logger.error(f"Error processing button response from {phone_number}: {str(e)}")
     
     def _handle_new_user(self, phone_number: str, message_data: Dict[str, Any]) -> None:
         """Handle new user registration and welcome message"""
@@ -186,6 +249,10 @@ Actualmente no cuentas con una licencia activa.
             elif message_type == 'image':
                 logger.info(f"Image message from {phone_number}")
                 self._process_image_message(phone_number, message, user)
+                
+            elif message_type == 'interactive':
+                logger.info(f"Interactive button response from {phone_number}")
+                self._process_button_response(phone_number, message, user)
                 
             else:
                 # Handle other unsupported message types

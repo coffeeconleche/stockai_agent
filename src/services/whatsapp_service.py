@@ -181,3 +181,56 @@ class WhatsAppService:
         except Exception as e:
             logger.error(f"Error sending WhatsApp image message to {to_phone}: {str(e)}")
             return False
+    
+    def send_reply_buttons(self, to_phone: str, message_text: str, buttons: list) -> bool:
+        """Send an interactive message with reply buttons"""
+        try:
+            if not self.access_token or not self.phone_number_id:
+                logger.error("WhatsApp API credentials not configured")
+                return False
+            
+            url = f"{self.api_url}/messages"
+            
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            # Format buttons for WhatsApp API
+            button_list = []
+            for btn in buttons[:3]:  # WhatsApp allows max 3 reply buttons
+                button_list.append({
+                    'type': 'reply',
+                    'reply': {
+                        'id': btn['id'],
+                        'title': btn['title']
+                    }
+                })
+            
+            payload = {
+                'messaging_product': 'whatsapp',
+                'to': to_phone.replace('+', ''),
+                'type': 'interactive',
+                'interactive': {
+                    'type': 'button',
+                    'body': {
+                        'text': message_text
+                    },
+                    'action': {
+                        'buttons': button_list
+                    }
+                }
+            }
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                logger.info(f"Reply buttons sent successfully to {to_phone}")
+                return True
+            else:
+                logger.error(f"Failed to send reply buttons to {to_phone}: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error sending WhatsApp reply buttons to {to_phone}: {str(e)}")
+            return False
