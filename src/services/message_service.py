@@ -6,7 +6,7 @@ import requests
 import tempfile
 import os
 from typing import Dict, Any, List
-from src.models import User, UserRepository, Transaction, TransactionRepository, AuthorizedUser, AuthorizedUserRepository
+from src.models import User, UserRepository, Transaction, TransactionRepository, AuthorizedUser, AuthorizedUserRepository, PendingTransaction, PendingTransactionRepository
 from src.services.whatsapp_service import WhatsAppService
 from src.services.openai_service import OpenAIService
 from src.services.image_service import ImageService
@@ -21,12 +21,13 @@ class MessageService:
     def __init__(self):
         self.user_repo = UserRepository()
         self.transaction_repo = TransactionRepository()
+        self.pending_transaction_repo = PendingTransactionRepository()
         self.authorized_user_repo = AuthorizedUserRepository()
         self.whatsapp_service = WhatsAppService()
         self.openai_service = OpenAIService()
         self.image_service = ImageService()
         self.templates = MessageTemplates()
-        self.response_mode = Config.RESPONSE_MODE  # 'text' or 'image'
+        self.response_mode = Config.RESPONSE_MODE  # 'text', 'image', or 'auto'
     
     def process_webhook_data(self, webhook_data: Dict[str, Any]) -> None:
         """Process incoming webhook data from WhatsApp"""
@@ -160,6 +161,29 @@ Actualmente no cuentas con una licencia activa.
         except Exception as e:
             logger.error(f"Error sending text response: {str(e)}")
     
+    def _merge_transactions(self, existing: List[Dict[str, Any]], new: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Merge new transactions with existing ones, updating or adding as needed"""
+        try:
+            # Create a dictionary of existing transactions by product name (case-insensitive)
+            existing_dict = {}
+            for trans in existing:
+                product_key = trans['product'].lower().strip()
+                existing_dict[product_key] = trans
+            
+            # Update or add new transactions
+            for new_trans in new:
+                product_key = new_trans['product'].lower().strip()
+                # If product exists, update it; otherwise, it will be added
+                existing_dict[product_key] = new_trans
+            
+            # Return merged list
+            return list(existing_dict.values())
+            
+        except Exception as e:
+            logger.error(f"Error merging transactions: {str(e)}")
+            # If merge fails, return new transactions
+            return new
+    
     def _send_confirmation_buttons(self, phone_number: str) -> None:
         """Send confirmation buttons for transaction verification"""
         try:
@@ -184,19 +208,53 @@ Actualmente no cuentas con una licencia activa.
             button_id = button_reply.get('id', '')
             
             if button_id == 'confirm_transaction':
-                # User confirmed the transactions
-                confirmation_msg = "✅ ¡Perfecto! Tus transacciones han sido confirmadas y guardadas correctamente."
-                self.whatsapp_service.send_text_message(phone_number, confirmation_msg)
-                logger.info(f"User {phone_number} confirmed transactions")
+                # Get pending transactions
+                pending = self.pending_transaction_repo.get_pending_transaction(phone_number)
+                
+                if pending:
+                    # Save all transactions to permanent table
+                    success_count = 0
+                    for transaction_data in pending.transactions_data:
+                        transaction = Transaction(
+                            phone_number=phone_number,
+                            transaction_type=transaction_data['transaction_type'],
+                            product=transaction_data['product'],
+                            product_variation=transaction_data.get('product_variation', ''),
+                            quantity=transaction_data['quantity'],
+                            quantity_units=transaction_data['quantity_units'],
+                            currency=transaction_data['currency'],
+                            cost=transaction_data['cost'],
+                            is_perishable=transaction_data['is_perishable'],
+                            raw_message=transaction_data.get('raw_message', ''),
+                            message_type=pending.message_type
+                        )
+                        
+                        if self.transaction_repo.create_transaction(transaction):
+                            success_count += 1
+                    
+                    # Delete pending transactions
+                    self.pending_transaction_repo.delete_pending_transaction(phone_number)
+                    
+                    confirmation_msg = f"✅ ¡Perfecto! {success_count} transacción{'es' if success_count > 1 else ''} confirmada{'s' if success_count > 1 else ''} y guardada{'s' if success_count > 1 else ''} correctamente."
+                    self.whatsapp_service.send_text_message(phone_number, confirmation_msg)
+                    logger.info(f"User {phone_number} confirmed {success_count} transactions")
+                else:
+                    error_msg = "No hay transacciones pendientes para confirmar."
+                    self.whatsapp_service.send_text_message(phone_number, error_msg)
                 
             elif button_id == 'edit_transaction':
-                # User wants to edit
-                edit_msg = """📝 Para editar, por favor envía nuevamente la información correcta.
+                # User wants to edit - keep pending transactions for merging
+                edit_msg = """📝 Para editar, envía la información correcta.
 
 Puedes enviar:
-• Un mensaje de texto con los detalles
-• Un mensaje de voz
-• Una foto de tu registro
+• Mensaje de texto con los detalles corregidos
+• Mensaje de voz
+• Foto de tu registro
+
+💡 **Importante:**
+• Si mencionas productos que ya registraste, se actualizarán
+• Si mencionas productos nuevos, se agregarán a la lista
+• Solo envía los productos que quieres corregir o agregar
 
 Ejemplo: "Vendí 5 camisas rojas a 25 soles cada una" """
                 self.whatsapp_service.send_text_message(phone_number, edit_msg)
@@ -275,56 +333,33 @@ Ejemplo: "Vendí 5 camisas rojas a 25 soles cada una" """
             if result and "error" not in result:
                 # Handle multiple transactions
                 if "multiple_transactions" in result:
-                    success_transactions = []
-                    
-                    for transaction_data in result["multiple_transactions"]:
-                        transaction = Transaction(
-                            phone_number=phone_number,
-                            transaction_type=transaction_data['transaction_type'],
-                            product=transaction_data['product'],
-                            product_variation=transaction_data['product_variation'],
-                            quantity=transaction_data['quantity'],
-                            quantity_units=transaction_data['quantity_units'],
-                            currency=transaction_data['currency'],
-                            cost=transaction_data['cost'],
-                            is_perishable=transaction_data['is_perishable'],
-                            raw_message=text_content,
-                            message_type='text'
-                        )
-                        
-                        if self.transaction_repo.create_transaction(transaction):
-                            success_transactions.append(transaction_data)
-                    
-                    if success_transactions:
-                        # Send response (text or image based on config)
-                        self._send_transaction_response(phone_number, success_transactions, user)
-                    else:
-                        error_msg = self.templates.get_error_message(user.language)
-                        self.whatsapp_service.send_text_message(phone_number, error_msg)
-                        
+                    transactions_data = result["multiple_transactions"]
                 else:
                     # Single transaction
-                    transaction = Transaction(
-                        phone_number=phone_number,
-                        transaction_type=result['transaction_type'],
-                        product=result['product'],
-                        product_variation=result['product_variation'],
-                        quantity=result['quantity'],
-                        quantity_units=result['quantity_units'],
-                        currency=result['currency'],
-                        cost=result['cost'],
-                        is_perishable=result['is_perishable'],
-                        raw_message=text_content,
-                        message_type='text'
-                    )
-                    
-                    if self.transaction_repo.create_transaction(transaction):
-                        # Send response (text or image based on config)
-                        self._send_transaction_response(phone_number, [result], user)
-                    else:
-                        # Database error
-                        error_msg = self.templates.get_error_message(user.language)
-                        self.whatsapp_service.send_text_message(phone_number, error_msg)
+                    transactions_data = [result]
+                
+                # Check if there are pending transactions (user is editing)
+                existing_pending = self.pending_transaction_repo.get_pending_transaction(phone_number)
+                
+                if existing_pending:
+                    # Merge new transactions with existing ones
+                    transactions_data = self._merge_transactions(existing_pending.transactions_data, transactions_data)
+                    logger.info(f"Merged {len(transactions_data)} transactions for {phone_number}")
+                
+                # Save to pending transactions table
+                pending_transaction = PendingTransaction(
+                    phone_number=phone_number,
+                    transactions_data=transactions_data,
+                    message_type='text'
+                )
+                
+                if self.pending_transaction_repo.create_pending_transaction(pending_transaction):
+                    # Send response (text or image based on config)
+                    self._send_transaction_response(phone_number, transactions_data, user)
+                else:
+                    # Database error
+                    error_msg = self.templates.get_error_message(user.language)
+                    self.whatsapp_service.send_text_message(phone_number, error_msg)
             else:
                 # AI couldn't process or error occurred
                 not_understood_msg = self.templates.get_not_understood_message(user.language)
@@ -391,53 +426,31 @@ Ejemplo: "Vendí 5 camisas rojas a 25 soles cada una" """
                     if result and "error" not in result:
                         # Handle multiple transactions
                         if "multiple_transactions" in result:
-                            success_transactions = []
-                            
-                            for transaction_data in result["multiple_transactions"]:
-                                transaction = Transaction(
-                                    phone_number=phone_number,
-                                    transaction_type=transaction_data['transaction_type'],
-                                    product=transaction_data['product'],
-                                    product_variation=transaction_data['product_variation'],
-                                    quantity=transaction_data['quantity'],
-                                    quantity_units=transaction_data['quantity_units'],
-                                    currency=transaction_data['currency'],
-                                    cost=transaction_data['cost'],
-                                    is_perishable=transaction_data['is_perishable'],
-                                    raw_message=transcribed_text,
-                                    message_type='audio'
-                                )
-                                
-                                if self.transaction_repo.create_transaction(transaction):
-                                    success_transactions.append(transaction_data)
-                            
-                            if success_transactions:
-                                self._send_transaction_response(phone_number, success_transactions, user)
-                            else:
-                                error_msg = self.templates.get_error_message(user.language)
-                                self.whatsapp_service.send_text_message(phone_number, error_msg)
-                                
+                            transactions_data = result["multiple_transactions"]
                         else:
                             # Single transaction
-                            transaction = Transaction(
-                                phone_number=phone_number,
-                                transaction_type=result['transaction_type'],
-                                product=result['product'],
-                                product_variation=result['product_variation'],
-                                quantity=result['quantity'],
-                                quantity_units=result['quantity_units'],
-                                currency=result['currency'],
-                                cost=result['cost'],
-                                is_perishable=result['is_perishable'],
-                                raw_message=transcribed_text,
-                                message_type='audio'
-                            )
-                            
-                            if self.transaction_repo.create_transaction(transaction):
-                                self._send_transaction_response(phone_number, [result], user)
-                            else:
-                                error_msg = self.templates.get_error_message(user.language)
-                                self.whatsapp_service.send_text_message(phone_number, error_msg)
+                            transactions_data = [result]
+                        
+                        # Check if there are pending transactions (user is editing)
+                        existing_pending = self.pending_transaction_repo.get_pending_transaction(phone_number)
+                        
+                        if existing_pending:
+                            # Merge new transactions with existing ones
+                            transactions_data = self._merge_transactions(existing_pending.transactions_data, transactions_data)
+                            logger.info(f"Merged {len(transactions_data)} transactions for {phone_number}")
+                        
+                        # Save to pending transactions table
+                        pending_transaction = PendingTransaction(
+                            phone_number=phone_number,
+                            transactions_data=transactions_data,
+                            message_type='audio'
+                        )
+                        
+                        if self.pending_transaction_repo.create_pending_transaction(pending_transaction):
+                            self._send_transaction_response(phone_number, transactions_data, user)
+                        else:
+                            error_msg = self.templates.get_error_message(user.language)
+                            self.whatsapp_service.send_text_message(phone_number, error_msg)
                     else:
                         not_understood_msg = self.templates.get_not_understood_message(user.language)
                         explanation = "\n\nAsegúrate de hablar claramente sobre una venta o compra."
@@ -491,53 +504,31 @@ Ejemplo: "Vendí 5 camisas rojas a 25 soles cada una" """
             if result and "error" not in result:
                 # Handle multiple transactions
                 if "multiple_transactions" in result:
-                    success_transactions = []
-                    
-                    for transaction_data in result["multiple_transactions"]:
-                        transaction = Transaction(
-                            phone_number=phone_number,
-                            transaction_type=transaction_data['transaction_type'],
-                            product=transaction_data['product'],
-                            product_variation=transaction_data['product_variation'],
-                            quantity=transaction_data['quantity'],
-                            quantity_units=transaction_data['quantity_units'],
-                            currency=transaction_data['currency'],
-                            cost=transaction_data['cost'],
-                            is_perishable=transaction_data['is_perishable'],
-                            raw_message="[Imagen procesada]",
-                            message_type='image'
-                        )
-                        
-                        if self.transaction_repo.create_transaction(transaction):
-                            success_transactions.append(transaction_data)
-                    
-                    if success_transactions:
-                        self._send_transaction_response(phone_number, success_transactions, user)
-                    else:
-                        error_msg = self.templates.get_error_message(user.language)
-                        self.whatsapp_service.send_text_message(phone_number, error_msg)
-                        
+                    transactions_data = result["multiple_transactions"]
                 else:
                     # Single transaction
-                    transaction = Transaction(
-                        phone_number=phone_number,
-                        transaction_type=result['transaction_type'],
-                        product=result['product'],
-                        product_variation=result['product_variation'],
-                        quantity=result['quantity'],
-                        quantity_units=result['quantity_units'],
-                        currency=result['currency'],
-                        cost=result['cost'],
-                        is_perishable=result['is_perishable'],
-                        raw_message="[Imagen procesada]",
-                        message_type='image'
-                    )
-                    
-                    if self.transaction_repo.create_transaction(transaction):
-                        self._send_transaction_response(phone_number, [result], user)
-                    else:
-                        error_msg = self.templates.get_error_message(user.language)
-                        self.whatsapp_service.send_text_message(phone_number, error_msg)
+                    transactions_data = [result]
+                
+                # Check if there are pending transactions (user is editing)
+                existing_pending = self.pending_transaction_repo.get_pending_transaction(phone_number)
+                
+                if existing_pending:
+                    # Merge new transactions with existing ones
+                    transactions_data = self._merge_transactions(existing_pending.transactions_data, transactions_data)
+                    logger.info(f"Merged {len(transactions_data)} transactions for {phone_number}")
+                
+                # Save to pending transactions table
+                pending_transaction = PendingTransaction(
+                    phone_number=phone_number,
+                    transactions_data=transactions_data,
+                    message_type='image'
+                )
+                
+                if self.pending_transaction_repo.create_pending_transaction(pending_transaction):
+                    self._send_transaction_response(phone_number, transactions_data, user)
+                else:
+                    error_msg = self.templates.get_error_message(user.language)
+                    self.whatsapp_service.send_text_message(phone_number, error_msg)
             else:
                 not_understood_msg = self.templates.get_not_understood_message(user.language)
                 explanation = "\n\nAsegúrate de que la imagen contenga información clara de ventas o compras."
