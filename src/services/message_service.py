@@ -10,6 +10,7 @@ from src.models import User, UserRepository, Transaction, TransactionRepository,
 from src.services.whatsapp_service import WhatsAppService
 from src.services.openai_service import OpenAIService
 from src.services.image_service import ImageService
+from src.services.query_service import QueryService
 from src.utils.message_templates import MessageTemplates
 from src.config import Config
 
@@ -26,6 +27,7 @@ class MessageService:
         self.whatsapp_service = WhatsAppService()
         self.openai_service = OpenAIService()
         self.image_service = ImageService()
+        self.query_service = QueryService()
         self.templates = MessageTemplates()
         self.response_mode = Config.RESPONSE_MODE  # 'text', 'image', or 'auto'
     
@@ -160,6 +162,33 @@ Actualmente no cuentas con una licencia activa.
                 
         except Exception as e:
             logger.error(f"Error sending text response: {str(e)}")
+    
+    def _process_query_request(self, phone_number: str, query_params: Dict[str, Any], user: User) -> None:
+        """Process query/report request"""
+        try:
+            logger.info(f"Processing query request from {phone_number}: {query_params}")
+            
+            # Query transactions
+            transactions = self.query_service.query_transactions(phone_number, query_params)
+            
+            if not transactions:
+                no_data_msg = "No se encontraron transacciones con los criterios especificados. 🔍"
+                self.whatsapp_service.send_text_message(phone_number, no_data_msg)
+                return
+            
+            # Summarize transactions
+            summary = self.query_service.summarize_transactions(transactions)
+            
+            # Format and send report
+            report_text = self.query_service.format_summary_text(summary, query_params)
+            self.whatsapp_service.send_text_message(phone_number, report_text)
+            
+            logger.info(f"Sent query report to {phone_number}: {len(transactions)} transactions")
+            
+        except Exception as e:
+            logger.error(f"Error processing query request from {phone_number}: {str(e)}")
+            error_msg = "Ocurrió un error al generar el reporte. Por favor, intenta de nuevo."
+            self.whatsapp_service.send_text_message(phone_number, error_msg)
     
     def _merge_transactions(self, existing: List[Dict[str, Any]], new: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Merge new transactions with existing ones, updating or adding as needed"""
@@ -327,7 +356,15 @@ Ejemplo: "Vendí 5 camisas rojas a 25 soles cada una" """
             processing_msg = self.templates.get_processing_message(user.language)
             self.whatsapp_service.send_text_message(phone_number, processing_msg)
             
-            # Process with OpenAI
+            # First, check if this is a query request
+            query_check = self.openai_service.process_query_request(text_content)
+            
+            if query_check.get('is_query'):
+                # Handle query request
+                self._process_query_request(phone_number, query_check, user)
+                return
+            
+            # Process as transaction with OpenAI
             result = self.openai_service.process_text_message(text_content)
             print(result)
             if result and "error" not in result:
@@ -420,7 +457,15 @@ Ejemplo: "Vendí 5 camisas rojas a 25 soles cada una" """
                 transcribed_text = self.openai_service.transcribe_audio(audio_file_path)
                 
                 if transcribed_text:
-                    # Process the transcribed text as a regular text message
+                    # First, check if this is a query request
+                    query_check = self.openai_service.process_query_request(transcribed_text)
+                    
+                    if query_check.get('is_query'):
+                        # Handle query request
+                        self._process_query_request(phone_number, query_check, user)
+                        return
+                    
+                    # Process the transcribed text as a regular transaction message
                     result = self.openai_service.process_text_message(transcribed_text)
                     
                     if result and "error" not in result:
