@@ -11,6 +11,7 @@ from src.services.whatsapp_service import WhatsAppService
 from src.services.openai_service import OpenAIService
 from src.services.image_service import ImageService
 from src.services.query_service import QueryService
+from src.services.mercadopago_service import MercadoPagoService
 from src.utils.message_templates import MessageTemplates
 from src.config import Config
 
@@ -28,6 +29,7 @@ class MessageService:
         self.openai_service = OpenAIService()
         self.image_service = ImageService()
         self.query_service = QueryService()
+        self.mercadopago_service = MercadoPagoService()
         self.templates = MessageTemplates()
         self.response_mode = Config.RESPONSE_MODE  # 'text', 'image', or 'auto'
     
@@ -86,23 +88,41 @@ class MessageService:
     def _handle_unauthorized_user(self, phone_number: str, message: Dict[str, Any]) -> None:
         """Handle message from unauthorized user"""
         try:
-            # Send unauthorized message with CTA registration button
-            unauthorized_message = """✨ ¡Bienvenido a StockAI! 👋
+            # Generate personalized payment link
+            payment_link = self.mercadopago_service.create_payment_preference(phone_number)
+            
+            if payment_link:
+                # Send unauthorized message with payment link
+                unauthorized_message = f"""✨ ¡Bienvenido a StockAI! 👋
 Soy tu asistente inteligente para la optimización de inventarios, diseñado para ser potente, sencillo y práctico.
 
-Con StockAI podrás ahorrar dinero, reducir desperdicios y contribuir a la economía circular en tu negocio. 🌱💰
+Con StockAI podrás:
+🌱 Ahorrar dinero
+📊 Reducir desperdicios
+♻️ Contribuir a la economía circular
+
+💰 **Precio de lanzamiento:** S/ {Config.LICENSE_PRICE:.2f}
 
 Actualmente no cuentas con una licencia activa.
-👉 Para comenzar a aprovechar todos estos beneficios, haz clic en 'Registrarme' y activa tu acceso."""
-            
-            self.whatsapp_service.send_interactive_message(
-                phone_number, 
-                unauthorized_message, 
-                "Registrarme", 
-                "https://stockai.cloud/"
-            )
-            
-            logger.info(f"Handled unauthorized user: {phone_number}")
+👉 Para comenzar a aprovechar todos estos beneficios, haz clic en 'Registrarme' y completa tu pago de forma segura."""
+                
+                self.whatsapp_service.send_interactive_message(
+                    phone_number, 
+                    unauthorized_message, 
+                    "Registrarme", 
+                    payment_link
+                )
+                
+                logger.info(f"Sent payment link to unauthorized user: {phone_number}")
+            else:
+                # Fallback if payment link generation fails
+                fallback_message = """✨ ¡Bienvenido a StockAI! 👋
+
+Actualmente no cuentas con una licencia activa.
+Por favor, visita https://stockai.cloud/ para registrarte."""
+                
+                self.whatsapp_service.send_text_message(phone_number, fallback_message)
+                logger.error(f"Failed to generate payment link for {phone_number}")
             
         except Exception as e:
             logger.error(f"Error handling unauthorized user {phone_number}: {str(e)}")

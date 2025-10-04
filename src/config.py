@@ -43,6 +43,13 @@ class Config:
     S3_BUCKET_NAME: str = os.getenv('S3_BUCKET_NAME', 'whatsapp-ai-agent-images')
     S3_IMAGES_PREFIX: str = 'transaction-images/'
     
+    # Mercado Pago Configuration
+    MERCADOPAGO_ACCESS_TOKEN: str = os.getenv('MERCADOPAGO_ACCESS_TOKEN', '')
+    MERCADOPAGO_PUBLIC_KEY: str = os.getenv('MERCADOPAGO_PUBLIC_KEY', '')
+    LICENSE_PRICE: float = float(os.getenv('LICENSE_PRICE', '99.00'))  # Price in PEN
+    LICENSE_CURRENCY: str = os.getenv('LICENSE_CURRENCY', 'PEN')
+    PAYMENT_WEBHOOK_URL: str = os.getenv('PAYMENT_WEBHOOK_URL', '')
+    
     @classmethod
     def validate_required_config(cls) -> bool:
         """Validate that all required configuration is present"""
