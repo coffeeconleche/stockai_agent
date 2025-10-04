@@ -1,5 +1,9 @@
 FROM public.ecr.aws/lambda/python:3.12
 
+# Install fonts for proper Unicode/Spanish character support
+RUN microdnf install -y dejavu-sans-fonts dejavu-serif-fonts fontconfig && \
+    microdnf clean all
+
 # Copy requirements and install dependencies
 COPY requirements.txt ${LAMBDA_TASK_ROOT}
 RUN pip install -r requirements.txt

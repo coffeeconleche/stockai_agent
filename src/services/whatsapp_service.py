@@ -142,3 +142,42 @@ class WhatsAppService:
         except Exception as e:
             logger.error(f"Error sending WhatsApp interactive CTA message to {to_phone}: {str(e)}")
             return False
+    
+    def send_image_message(self, to_phone: str, image_url: str, caption: str = "") -> bool:
+        """Send an image message via WhatsApp Business API"""
+        try:
+            if not self.access_token or not self.phone_number_id:
+                logger.error("WhatsApp API credentials not configured")
+                return False
+            
+            url = f"{self.api_url}/messages"
+            
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'messaging_product': 'whatsapp',
+                'to': to_phone.replace('+', ''),
+                'type': 'image',
+                'image': {
+                    'link': image_url
+                }
+            }
+            
+            if caption:
+                payload['image']['caption'] = caption
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                logger.info(f"Image message sent successfully to {to_phone}")
+                return True
+            else:
+                logger.error(f"Failed to send image message to {to_phone}: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error sending WhatsApp image message to {to_phone}: {str(e)}")
+            return False

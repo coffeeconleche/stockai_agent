@@ -5,11 +5,13 @@ import logging
 import requests
 import tempfile
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List
 from src.models import User, UserRepository, Transaction, TransactionRepository, AuthorizedUser, AuthorizedUserRepository
 from src.services.whatsapp_service import WhatsAppService
 from src.services.openai_service import OpenAIService
+from src.services.image_service import ImageService
 from src.utils.message_templates import MessageTemplates
+from src.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +24,9 @@ class MessageService:
         self.authorized_user_repo = AuthorizedUserRepository()
         self.whatsapp_service = WhatsAppService()
         self.openai_service = OpenAIService()
+        self.image_service = ImageService()
         self.templates = MessageTemplates()
+        self.response_mode = Config.RESPONSE_MODE  # 'text' or 'image'
     
     def process_webhook_data(self, webhook_data: Dict[str, Any]) -> None:
         """Process incoming webhook data from WhatsApp"""
@@ -100,6 +104,47 @@ Actualmente no cuentas con una licencia activa.
         except Exception as e:
             logger.error(f"Error handling unauthorized user {phone_number}: {str(e)}")
     
+    def _send_transaction_response(self, phone_number: str, transactions: List[Dict[str, Any]], user: User) -> None:
+        """Send transaction response based on configured mode (text or image)"""
+        try:
+            if self.response_mode == 'image':
+                # Generate and send image
+                image_url = self.image_service.generate_transaction_image(transactions)
+                
+                if image_url:
+                    caption = f"✅ Registré {len(transactions)} transacción{'es' if len(transactions) > 1 else ''}"
+                    self.whatsapp_service.send_image_message(phone_number, image_url, caption)
+                else:
+                    # Fallback to text if image generation fails
+                    logger.warning("Image generation failed, falling back to text response")
+                    self._send_text_response(phone_number, transactions, user)
+            else:
+                # Send text response
+                self._send_text_response(phone_number, transactions, user)
+                
+        except Exception as e:
+            logger.error(f"Error sending transaction response: {str(e)}")
+            # Fallback to text
+            self._send_text_response(phone_number, transactions, user)
+    
+    def _send_text_response(self, phone_number: str, transactions: List[Dict[str, Any]], user: User) -> None:
+        """Send text-based transaction response"""
+        try:
+            if len(transactions) > 1:
+                responses = []
+                for transaction_data in transactions:
+                    response = self.templates.format_transaction_response(transaction_data, user.language)
+                    responses.append(response)
+                
+                final_response = f"✅ Registré {len(transactions)} transacciones:\n\n" + "\n\n---\n\n".join(responses)
+                self.whatsapp_service.send_text_message(phone_number, final_response)
+            else:
+                response = self.templates.format_transaction_response(transactions[0], user.language)
+                self.whatsapp_service.send_text_message(phone_number, response)
+                
+        except Exception as e:
+            logger.error(f"Error sending text response: {str(e)}")
+    
     def _handle_new_user(self, phone_number: str, message_data: Dict[str, Any]) -> None:
         """Handle new user registration and welcome message"""
         try:
@@ -163,8 +208,7 @@ Actualmente no cuentas con una licencia activa.
             if result and "error" not in result:
                 # Handle multiple transactions
                 if "multiple_transactions" in result:
-                    success_count = 0
-                    responses = []
+                    success_transactions = []
                     
                     for transaction_data in result["multiple_transactions"]:
                         transaction = Transaction(
@@ -182,14 +226,11 @@ Actualmente no cuentas con una licencia activa.
                         )
                         
                         if self.transaction_repo.create_transaction(transaction):
-                            success_count += 1
-                            response = self.templates.format_transaction_response(transaction_data, user.language)
-                            responses.append(response)
+                            success_transactions.append(transaction_data)
                     
-                    if success_count > 0:
-                        # Send all successful transaction responses
-                        final_response = f"✅ Registré {success_count} transacciones:\n\n" + "\n\n---\n\n".join(responses)
-                        self.whatsapp_service.send_text_message(phone_number, final_response)
+                    if success_transactions:
+                        # Send response (text or image based on config)
+                        self._send_transaction_response(phone_number, success_transactions, user)
                     else:
                         error_msg = self.templates.get_error_message(user.language)
                         self.whatsapp_service.send_text_message(phone_number, error_msg)
@@ -211,9 +252,8 @@ Actualmente no cuentas con una licencia activa.
                     )
                     
                     if self.transaction_repo.create_transaction(transaction):
-                        # Send success response with formatted data
-                        response = self.templates.format_transaction_response(result, user.language)
-                        self.whatsapp_service.send_text_message(phone_number, response)
+                        # Send response (text or image based on config)
+                        self._send_transaction_response(phone_number, [result], user)
                     else:
                         # Database error
                         error_msg = self.templates.get_error_message(user.language)
@@ -284,8 +324,7 @@ Actualmente no cuentas con una licencia activa.
                     if result and "error" not in result:
                         # Handle multiple transactions
                         if "multiple_transactions" in result:
-                            success_count = 0
-                            responses = []
+                            success_transactions = []
                             
                             for transaction_data in result["multiple_transactions"]:
                                 transaction = Transaction(
@@ -303,13 +342,10 @@ Actualmente no cuentas con una licencia activa.
                                 )
                                 
                                 if self.transaction_repo.create_transaction(transaction):
-                                    success_count += 1
-                                    response = self.templates.format_transaction_response(transaction_data, user.language)
-                                    responses.append(response)
+                                    success_transactions.append(transaction_data)
                             
-                            if success_count > 0:
-                                final_response = f"✅ Registré {success_count} transacciones:\n\n" + "\n\n---\n\n".join(responses)
-                                self.whatsapp_service.send_text_message(phone_number, final_response)
+                            if success_transactions:
+                                self._send_transaction_response(phone_number, success_transactions, user)
                             else:
                                 error_msg = self.templates.get_error_message(user.language)
                                 self.whatsapp_service.send_text_message(phone_number, error_msg)
@@ -331,8 +367,7 @@ Actualmente no cuentas con una licencia activa.
                             )
                             
                             if self.transaction_repo.create_transaction(transaction):
-                                response = self.templates.format_transaction_response(result, user.language)
-                                self.whatsapp_service.send_text_message(phone_number, response)
+                                self._send_transaction_response(phone_number, [result], user)
                             else:
                                 error_msg = self.templates.get_error_message(user.language)
                                 self.whatsapp_service.send_text_message(phone_number, error_msg)
@@ -389,8 +424,7 @@ Actualmente no cuentas con una licencia activa.
             if result and "error" not in result:
                 # Handle multiple transactions
                 if "multiple_transactions" in result:
-                    success_count = 0
-                    responses = []
+                    success_transactions = []
                     
                     for transaction_data in result["multiple_transactions"]:
                         transaction = Transaction(
@@ -408,13 +442,10 @@ Actualmente no cuentas con una licencia activa.
                         )
                         
                         if self.transaction_repo.create_transaction(transaction):
-                            success_count += 1
-                            response = self.templates.format_transaction_response(transaction_data, user.language)
-                            responses.append(response)
+                            success_transactions.append(transaction_data)
                     
-                    if success_count > 0:
-                        final_response = f"✅ Registré {success_count} transacciones:\n\n" + "\n\n---\n\n".join(responses)
-                        self.whatsapp_service.send_text_message(phone_number, final_response)
+                    if success_transactions:
+                        self._send_transaction_response(phone_number, success_transactions, user)
                     else:
                         error_msg = self.templates.get_error_message(user.language)
                         self.whatsapp_service.send_text_message(phone_number, error_msg)
@@ -436,8 +467,7 @@ Actualmente no cuentas con una licencia activa.
                     )
                     
                     if self.transaction_repo.create_transaction(transaction):
-                        response = self.templates.format_transaction_response(result, user.language)
-                        self.whatsapp_service.send_text_message(phone_number, response)
+                        self._send_transaction_response(phone_number, [result], user)
                     else:
                         error_msg = self.templates.get_error_message(user.language)
                         self.whatsapp_service.send_text_message(phone_number, error_msg)

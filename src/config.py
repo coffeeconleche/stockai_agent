@@ -34,6 +34,13 @@ class Config:
     DEFAULT_LANGUAGE: str = 'es'  # Spanish
     DEFAULT_CURRENCY: str = 'PEN'  # Peruvian Soles
     
+    # Response Configuration
+    RESPONSE_MODE: str = os.getenv('RESPONSE_MODE', 'text')  # 'text' or 'image'
+    
+    # S3 Configuration for image storage
+    S3_BUCKET_NAME: str = os.getenv('S3_BUCKET_NAME', 'whatsapp-ai-agent-images')
+    S3_IMAGES_PREFIX: str = 'transaction-images/'
+    
     @classmethod
     def validate_required_config(cls) -> bool:
         """Validate that all required configuration is present"""
