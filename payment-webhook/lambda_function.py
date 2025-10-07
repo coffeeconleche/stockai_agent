@@ -132,20 +132,26 @@ def verify_payment(payment_id: str) -> Optional[Dict[str, Any]]:
 
 
 def register_authorized_user(phone_number: str, email: str = '') -> bool:
-    """Register user in authorized users DynamoDB table"""
+    """Register user in authorized users DynamoDB table with 3-month expiry"""
     try:
+        from datetime import timedelta
+        
+        registration_date = datetime.utcnow()
+        expiry_date = registration_date + timedelta(days=90)  # 3 months = 90 days
+        
         item = {
             'phone_number': phone_number,
             'license_type': 'premium',
             'license_status': 'active',
             'email': email,
-            'registration_date': datetime.utcnow().isoformat(),
+            'registration_date': registration_date.isoformat(),
+            'expiry_date': expiry_date.isoformat(),
             'company_name': '',
             'contact_name': ''
         }
         
         authorized_users_table.put_item(Item=item)
-        logger.info(f"Successfully registered user: {phone_number}")
+        logger.info(f"Successfully registered user: {phone_number} (expires: {expiry_date.date()})")
         return True
         
     except Exception as e:

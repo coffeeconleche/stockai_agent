@@ -25,6 +25,7 @@ aws ecr get-login-password --region "$REGION" --no-cli-pager | docker login --us
 docker buildx create --use >/dev/null 2>&1 || true
 
 # Build SINGLE-ARCH image for Lambda x86_64 and load into classic docker image store
+# Note: payment-webhook/ is excluded via .dockerignore
 echo "🏗️  Building Docker image (linux/amd64 single-arch)..."
 docker buildx build --platform linux/amd64 -t "$REPOSITORY_NAME:$IMAGE_TAG" --load .
 

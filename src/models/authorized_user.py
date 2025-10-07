@@ -2,7 +2,7 @@
 Authorized user model and database operations
 """
 import boto3
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 from src.config import Config
 import logging
@@ -17,7 +17,16 @@ class AuthorizedUser:
         self.license_type = kwargs.get('license_type', 'basic')  # basic, premium, enterprise
         self.license_status = kwargs.get('license_status', 'active')  # active, suspended, expired
         self.registration_date = kwargs.get('registration_date', datetime.utcnow().isoformat())
-        self.expiry_date = kwargs.get('expiry_date', None)
+        
+        # Calculate expiry date (3 months from registration) if not provided
+        if kwargs.get('expiry_date'):
+            self.expiry_date = kwargs.get('expiry_date')
+        else:
+            # Default: 3 months (90 days) from registration
+            registration_dt = datetime.fromisoformat(self.registration_date.replace('Z', '+00:00')).replace(tzinfo=None)
+            expiry_dt = registration_dt + timedelta(days=90)
+            self.expiry_date = expiry_dt.isoformat()
+        
         self.company_name = kwargs.get('company_name', '')
         self.contact_name = kwargs.get('contact_name', '')
         self.email = kwargs.get('email', '')
@@ -66,19 +75,46 @@ class AuthorizedUser:
         )
     
     def is_active(self) -> bool:
-        """Check if the user's license is active"""
+        """Check if the user's license is active and not expired"""
+        # First check license status
         if self.license_status != 'active':
+            logger.info(f"License not active for {self.phone_number}: status={self.license_status}")
             return False
         
-        # Check expiry date if set
+        # Check expiry date
         if self.expiry_date:
             try:
-                expiry = datetime.fromisoformat(self.expiry_date.replace('Z', '+00:00'))
-                return datetime.utcnow() < expiry.replace(tzinfo=None)
-            except:
-                return True  # If date parsing fails, assume active
+                expiry = datetime.fromisoformat(self.expiry_date.replace('Z', '+00:00')).replace(tzinfo=None)
+                now = datetime.utcnow()
+                
+                if now >= expiry:
+                    logger.info(f"License expired for {self.phone_number}: expiry={self.expiry_date}")
+                    return False
+                
+                # Log days remaining
+                days_remaining = (expiry - now).days
+                logger.info(f"License active for {self.phone_number}: {days_remaining} days remaining")
+                return True
+            except Exception as e:
+                logger.error(f"Error parsing expiry date for {self.phone_number}: {str(e)}")
+                return False  # If date parsing fails, consider expired for safety
         
+        # No expiry date set - consider active (shouldn't happen with new system)
+        logger.warning(f"No expiry date set for {self.phone_number}")
         return True
+    
+    def days_until_expiry(self) -> Optional[int]:
+        """Get number of days until license expires"""
+        if not self.expiry_date:
+            return None
+        
+        try:
+            expiry = datetime.fromisoformat(self.expiry_date.replace('Z', '+00:00')).replace(tzinfo=None)
+            now = datetime.utcnow()
+            days = (expiry - now).days
+            return max(0, days)  # Return 0 if already expired
+        except:
+            return None
 
 class AuthorizedUserRepository:
     """Repository for authorized user database operations"""

@@ -86,14 +86,47 @@ class MessageService:
             logger.error(f"Error processing message change: {str(e)}")
     
     def _handle_unauthorized_user(self, phone_number: str, message: Dict[str, Any]) -> None:
-        """Handle message from unauthorized user"""
+        """Handle message from unauthorized user or expired license"""
         try:
-            # Generate personalized payment link
-            payment_link = self.mercadopago_service.create_payment_preference(phone_number)
+            # Check if user exists but license is expired
+            authorized_user = self.authorized_user_repo.get_authorized_user(phone_number)
             
-            if payment_link:
-                # Send unauthorized message with payment link
-                unauthorized_message = f"""✨ ¡Bienvenido a StockAI! 👋
+            if authorized_user and not authorized_user.is_active():
+                # User exists but license expired
+                expiry_date_str = authorized_user.expiry_date[:10] if authorized_user.expiry_date else 'N/A'
+                expired_message = f"""⚠️ Tu licencia de StockAI ha expirado
+
+Tu acceso venció el: {expiry_date_str}
+
+Para continuar disfrutando de todos los beneficios de StockAI:
+🌱 Ahorrar dinero
+📊 Reducir desperdicios
+♻️ Contribuir a la economía circular
+
+💰 *Renueva tu licencia por 3 meses:* S/ {Config.LICENSE_PRICE:.2f}
+
+👉 Haz clic en 'Renovar' para reactivar tu acceso."""
+                
+                payment_link = self.mercadopago_service.create_payment_preference(phone_number)
+                
+                if payment_link:
+                    self.whatsapp_service.send_interactive_message(
+                        phone_number, 
+                        expired_message, 
+                        "Renovar", 
+                        payment_link
+                    )
+                else:
+                    self.whatsapp_service.send_text_message(phone_number, expired_message)
+                
+                logger.info(f"Sent renewal message to expired user: {phone_number}")
+            else:
+                # New user - send registration message
+                payment_link = self.mercadopago_service.create_payment_preference(phone_number)
+                
+                if payment_link:
+                    # Send unauthorized message with payment link
+                    unauthorized_message = f"""✨ ¡Bienvenido a StockAI! 👋
 Soy tu asistente inteligente para la optimización de inventarios, diseñado para ser potente, sencillo y práctico.
 
 Con StockAI podrás:
@@ -101,28 +134,28 @@ Con StockAI podrás:
 📊 Reducir desperdicios
 ♻️ Contribuir a la economía circular
 
-💰 **Precio de lanzamiento:** S/ {Config.LICENSE_PRICE:.2f}
+💰 *Precio Especial por Licencia de 3 meses:* S/ {Config.LICENSE_PRICE:.2f}
 
 Actualmente no cuentas con una licencia activa.
 👉 Para comenzar a aprovechar todos estos beneficios, haz clic en 'Registrarme' y completa tu pago de forma segura."""
-                
-                self.whatsapp_service.send_interactive_message(
-                    phone_number, 
-                    unauthorized_message, 
-                    "Registrarme", 
-                    payment_link
-                )
-                
-                logger.info(f"Sent payment link to unauthorized user: {phone_number}")
-            else:
-                # Fallback if payment link generation fails
-                fallback_message = """✨ ¡Bienvenido a StockAI! 👋
+                    
+                    self.whatsapp_service.send_interactive_message(
+                        phone_number, 
+                        unauthorized_message, 
+                        "Registrarme", 
+                        payment_link
+                    )
+                    
+                    logger.info(f"Sent payment link to new user: {phone_number}")
+                else:
+                    # Fallback if payment link generation fails
+                    fallback_message = """✨ ¡Bienvenido a StockAI! 👋
 
 Actualmente no cuentas con una licencia activa.
 Por favor, visita https://stockai.cloud/ para registrarte."""
-                
-                self.whatsapp_service.send_text_message(phone_number, fallback_message)
-                logger.error(f"Failed to generate payment link for {phone_number}")
+                    
+                    self.whatsapp_service.send_text_message(phone_number, fallback_message)
+                    logger.error(f"Failed to generate payment link for {phone_number}")
             
         except Exception as e:
             logger.error(f"Error handling unauthorized user {phone_number}: {str(e)}")

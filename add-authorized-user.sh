@@ -34,6 +34,8 @@ add_user() {
     # Create a temporary JSON file to avoid escaping issues
     local temp_file=$(mktemp)
     local registration_date=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+    # Calculate expiry date (90 days from now) - works on both macOS and Linux
+    local expiry_date=$(date -u -v+90d +"%Y-%m-%dT%H:%M:%S.000Z" 2>/dev/null || date -u -d "+90 days" +"%Y-%m-%dT%H:%M:%S.000Z")
     
     cat > "$temp_file" << EOF
 {
@@ -41,6 +43,7 @@ add_user() {
     "license_type": {"S": "$license_type"},
     "license_status": {"S": "active"},
     "registration_date": {"S": "$registration_date"},
+    "expiry_date": {"S": "$expiry_date"},
     "company_name": {"S": "$company_name"},
     "contact_name": {"S": "$contact_name"},
     "email": {"S": "$email"}
