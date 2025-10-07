@@ -88,11 +88,32 @@ class MessageService:
     def _handle_unauthorized_user(self, phone_number: str, message: Dict[str, Any]) -> None:
         """Handle message from unauthorized user or expired license"""
         try:
-            # Check if user exists but license is expired
+            # Check if user exists and get license status
             authorized_user = self.authorized_user_repo.get_authorized_user(phone_number)
             
+            # IMPORTANT: Only generate payment link if user does NOT have active license
+            if authorized_user and authorized_user.is_active():
+                # User has ACTIVE license but somehow got here (shouldn't happen)
+                # This is a safety check
+                days_remaining = authorized_user.days_until_expiry()
+                expiry_date_str = authorized_user.expiry_date[:10] if authorized_user.expiry_date else 'N/A'
+                
+                already_active_msg = f"""✅ Tu licencia ya está activa
+
+Tu licencia de StockAI está activa y funcionando.
+
+📅 Vence el: {expiry_date_str}
+⏰ Días restantes: {days_remaining} días
+
+No necesitas realizar ningún pago en este momento.
+Te notificaremos cuando sea momento de renovar. 🚀"""
+                
+                self.whatsapp_service.send_text_message(phone_number, already_active_msg)
+                logger.warning(f"User {phone_number} has active license but reached unauthorized handler")
+                return
+            
             if authorized_user and not authorized_user.is_active():
-                # User exists but license expired
+                # User exists but license expired - OK to generate payment link
                 expiry_date_str = authorized_user.expiry_date[:10] if authorized_user.expiry_date else 'N/A'
                 expired_message = f"""⚠️ Tu licencia de StockAI ha expirado
 
@@ -121,7 +142,7 @@ Para continuar disfrutando de todos los beneficios de StockAI:
                 
                 logger.info(f"Sent renewal message to expired user: {phone_number}")
             else:
-                # New user - send registration message
+                # New user (no record) - OK to generate payment link
                 payment_link = self.mercadopago_service.create_payment_preference(phone_number)
                 
                 if payment_link:

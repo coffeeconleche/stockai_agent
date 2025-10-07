@@ -33,6 +33,14 @@ class MercadoPagoService:
             }
             
             # Create payment preference according to MP API spec
+            from datetime import datetime, timedelta
+            
+            # Set expiration to 24 hours from now
+            expiration_date = datetime.utcnow() + timedelta(hours=24)
+            
+            # Generate unique reference to prevent reuse
+            unique_reference = f"{phone_number}_{int(datetime.utcnow().timestamp())}"
+            
             payload = {
                 "items": [
                     {
@@ -48,11 +56,15 @@ class MercadoPagoService:
                         "number": phone_number.replace('+', '')
                     }
                 },
-                "external_reference": phone_number,  # Use phone number as reference
+                "external_reference": unique_reference,  # Unique reference per payment link
                 "statement_descriptor": "STOCKAI",
+                "expires": True,
+                "expiration_date_from": datetime.utcnow().isoformat(),
+                "expiration_date_to": expiration_date.isoformat(),
                 "metadata": {
-                    "phone_number": phone_number,
-                    "product": "stockai_license"
+                    "phone_number": phone_number,  # Store actual phone here
+                    "product": "stockai_license",
+                    "created_at": datetime.utcnow().isoformat()
                 }
             }
             
