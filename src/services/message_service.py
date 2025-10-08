@@ -318,11 +318,26 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
             # Summarize transactions
             summary = self.query_service.summarize_transactions(transactions)
             
-            # Format and send report
-            report_text = self.query_service.format_summary_text(summary, query_params)
-            self.whatsapp_service.send_text_message(phone_number, report_text)
-            
-            logger.info(f"Sent query report to {phone_number}: {len(transactions)} transactions")
+            # Determine if should send as image or text
+            if self.query_service.should_use_image(summary):
+                # Generate and send report image
+                image_url = self.image_service.generate_report_image(summary, query_params)
+                
+                if image_url:
+                    product_count = len(summary.get('products', []))
+                    caption = f"📊 Reporte de {product_count} producto{'s' if product_count != 1 else ''}"
+                    self.whatsapp_service.send_image_message(phone_number, image_url, caption)
+                    logger.info(f"Sent query report as image to {phone_number}: {len(transactions)} transactions")
+                else:
+                    # Fallback to text if image generation fails
+                    logger.warning("Report image generation failed, falling back to text")
+                    report_text = self.query_service.format_summary_text(summary, query_params)
+                    self.whatsapp_service.send_text_message(phone_number, report_text)
+            else:
+                # Send as text for small reports
+                report_text = self.query_service.format_summary_text(summary, query_params)
+                self.whatsapp_service.send_text_message(phone_number, report_text)
+                logger.info(f"Sent query report as text to {phone_number}: {len(transactions)} transactions")
             
             # Record interaction for freemium users
             if self.current_user_status == "freemium":

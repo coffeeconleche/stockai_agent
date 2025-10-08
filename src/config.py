@@ -39,6 +39,7 @@ class Config:
     # Response Configuration
     RESPONSE_MODE: str = os.getenv('RESPONSE_MODE', 'auto')  # 'text', 'image', or 'auto'
     TRANSACTION_THRESHOLD: int = int(os.getenv('TRANSACTION_THRESHOLD', '4'))  # Use image if more than this number
+    QUERY_THRESHOLD: int = int(os.getenv('QUERY_THRESHOLD', '3'))  # Use image for reports if more than this number of products
     
     # S3 Configuration for image storage
     S3_BUCKET_NAME: str = os.getenv('S3_BUCKET_NAME', 'whatsapp-ai-agent-images')

@@ -18,6 +18,7 @@ class QueryService:
     def __init__(self):
         self.dynamodb = boto3.resource('dynamodb', region_name=Config.AWS_REGION)
         self.table = self.dynamodb.Table(Config.TRANSACTIONS_TABLE_NAME)
+        self.query_threshold = Config.QUERY_THRESHOLD
     
     def query_transactions(self, phone_number: str, query_params: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Query transactions based on parameters - optimized for all scenarios"""
@@ -175,6 +176,15 @@ class QueryService:
                 'total_cost': Decimal('0'),
                 'total_transactions': 0
             }
+    
+    def should_use_image(self, summary: Dict[str, Any]) -> bool:
+        """Determine if report should be sent as image based on number of products"""
+        try:
+            product_count = len(summary.get('products', []))
+            return product_count >= self.query_threshold
+        except Exception as e:
+            logger.error(f"Error checking if should use image: {str(e)}")
+            return False
     
     def format_summary_text(self, summary: Dict[str, Any], query_params: Dict[str, Any]) -> str:
         """Format summary as text message"""
