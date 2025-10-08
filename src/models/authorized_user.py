@@ -115,6 +115,10 @@ class AuthorizedUser:
             return max(0, days)  # Return 0 if already expired
         except:
             return None
+    
+    def is_freemium(self) -> bool:
+        """Check if the user has a freemium license type"""
+        return self.license_type == 'freemium'
 
 class AuthorizedUserRepository:
     """Repository for authorized user database operations"""
@@ -176,4 +180,48 @@ class AuthorizedUserRepository:
             
         except Exception as e:
             logger.error(f"Error updating license status for {phone_number}: {str(e)}")
+            return False
+    
+    def create_freemium_user(self, phone_number: str) -> AuthorizedUser:
+        """Create new freemium user with default settings"""
+        try:
+            user = AuthorizedUser(
+                phone_number=phone_number,
+                license_type='freemium',
+                license_status='active',
+                registration_date=datetime.utcnow().isoformat(),
+                expiry_date='',
+                company_name='',
+                contact_name='',
+                email=''
+            )
+            
+            self.table.put_item(Item=user.to_dict())
+            logger.info(f"Created freemium user: {user.phone_number}")
+            return user
+            
+        except Exception as e:
+            logger.error(f"Error creating freemium user {phone_number}: {str(e)}")
+            raise
+    
+    def upgrade_to_premium(self, phone_number: str, email: str, expiry_date: str) -> bool:
+        """Upgrade user from freemium to premium"""
+        try:
+            normalized_phone = AuthorizedUser._normalize_phone_number(phone_number)
+            
+            self.table.update_item(
+                Key={'phone_number': normalized_phone},
+                UpdateExpression='SET license_type = :license_type, expiry_date = :expiry_date, email = :email',
+                ExpressionAttributeValues={
+                    ':license_type': 'premium',
+                    ':expiry_date': expiry_date,
+                    ':email': email
+                }
+            )
+            
+            logger.info(f"Upgraded user {normalized_phone} to premium until {expiry_date}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error upgrading user {phone_number} to premium: {str(e)}")
             return False

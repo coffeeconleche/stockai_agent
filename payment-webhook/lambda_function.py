@@ -61,16 +61,16 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 logger.info(f"Payment approved for phone: {phone_number}")
                 
                 if phone_number:
-                    # Check if user already has active license
+                    # Check if user already has active PREMIUM license
                     existing_license = check_existing_license(phone_number)
                     
-                    if existing_license['is_active']:
-                        # User already has active license - reject payment processing
+                    if existing_license['is_active'] and existing_license['license_type'] == 'premium':
+                        # User already has active PREMIUM license - reject payment processing
                         days_remaining = existing_license['days_remaining']
                         expiry_date = existing_license['expiry_date'][:10] if existing_license['expiry_date'] else 'N/A'
                         
-                        logger.warning(f"Payment rejected: User {phone_number} already has active license")
-                        logger.info(f"Current license expires: {expiry_date} ({days_remaining} days remaining)")
+                        logger.warning(f"Payment rejected: User {phone_number} already has active premium license")
+                        logger.info(f"Current premium license expires: {expiry_date} ({days_remaining} days remaining)")
                         
                         # Send notification to user
                         send_already_active_message(phone_number, expiry_date, days_remaining)
@@ -79,23 +79,29 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                             'statusCode': 200,
                             'body': json.dumps({
                                 'status': 'rejected',
-                                'message': 'User already has active license',
+                                'message': 'User already has active premium license',
                                 'days_remaining': days_remaining
                             })
                         }
                     
-                    # User doesn't have active license - process payment
+                    # User doesn't have active premium license - process payment
+                    # This includes: new users, freemium users, and expired premium users
+                    is_upgrade = existing_license['exists'] and existing_license['license_type'] == 'freemium'
                     success = register_authorized_user(phone_number, payer_email)
                     
                     if success:
-                        # Send welcome message for new/renewed license
+                        # Send welcome message (different for upgrades vs new users)
                         send_welcome_message(phone_number, is_renewal=False)
+                        
+                        log_message = "upgraded from freemium" if is_upgrade else "registered as new premium user"
+                        logger.info(f"User {phone_number} {log_message}")
                         
                         return {
                             'statusCode': 200,
                             'body': json.dumps({
                                 'status': 'success',
-                                'message': 'User registered successfully'
+                                'message': 'User registered successfully',
+                                'upgrade': is_upgrade
                             })
                         }
                     else:
@@ -156,17 +162,19 @@ def verify_payment(payment_id: str) -> Optional[Dict[str, Any]]:
 
 
 def check_existing_license(phone_number: str) -> dict:
-    """Check if user has an existing license and its status"""
+    """Check if user has an existing PREMIUM license and its status"""
     try:
         response = authorized_users_table.get_item(Key={'phone_number': phone_number})
         
         if 'Item' in response:
             item = response['Item']
+            license_type = item.get('license_type', 'freemium')
             license_status = item.get('license_status', '')
             expiry_date_str = item.get('expiry_date', '')
             
-            # Check if license is active and not expired
-            if license_status == 'active' and expiry_date_str:
+            # Only check for active PREMIUM licenses
+            # Freemium users should be allowed to upgrade
+            if license_type == 'premium' and license_status == 'active' and expiry_date_str:
                 try:
                     expiry_date = datetime.fromisoformat(expiry_date_str.replace('Z', '+00:00')).replace(tzinfo=None)
                     now = datetime.utcnow()
@@ -176,16 +184,18 @@ def check_existing_license(phone_number: str) -> dict:
                         return {
                             'exists': True,
                             'is_active': True,
+                            'license_type': license_type,
                             'expiry_date': expiry_date_str,
                             'days_remaining': days_remaining
                         }
                 except:
                     pass
             
-            # License exists but expired or inactive
+            # License exists but is freemium, expired, or inactive
             return {
                 'exists': True,
                 'is_active': False,
+                'license_type': license_type,
                 'expiry_date': expiry_date_str,
                 'days_remaining': 0
             }
@@ -194,13 +204,35 @@ def check_existing_license(phone_number: str) -> dict:
         return {
             'exists': False,
             'is_active': False,
+            'license_type': None,
             'expiry_date': None,
             'days_remaining': 0
         }
         
     except Exception as e:
         logger.error(f"Error checking existing license for {phone_number}: {str(e)}")
-        return {'exists': False, 'is_active': False, 'expiry_date': None, 'days_remaining': 0}
+        return {'exists': False, 'is_active': False, 'license_type': None, 'expiry_date': None, 'days_remaining': 0}
+
+
+def upgrade_to_premium(phone_number: str, email: str, expiry_date: str) -> bool:
+    """Upgrade user from freemium to premium"""
+    try:
+        authorized_users_table.update_item(
+            Key={'phone_number': phone_number},
+            UpdateExpression='SET license_type = :license_type, expiry_date = :expiry_date, email = :email',
+            ExpressionAttributeValues={
+                ':license_type': 'premium',
+                ':expiry_date': expiry_date,
+                ':email': email
+            }
+        )
+        
+        logger.info(f"Upgraded user {phone_number} to premium until {expiry_date}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error upgrading user {phone_number} to premium: {str(e)}")
+        return False
 
 
 def register_authorized_user(phone_number: str, email: str = '') -> bool:
@@ -213,24 +245,46 @@ def register_authorized_user(phone_number: str, email: str = '') -> bool:
         
         registration_date = datetime.utcnow()
         expiry_date = registration_date + timedelta(days=90)  # 3 months = 90 days
+        expiry_date_iso = expiry_date.isoformat()
         
-        item = {
-            'phone_number': phone_number,
-            'license_type': 'premium',
-            'license_status': 'active',
-            'email': email,
-            'registration_date': registration_date.isoformat(),
-            'expiry_date': expiry_date.isoformat(),
-            'company_name': '',
-            'contact_name': ''
-        }
+        # Check if user exists (could be freemium user)
+        existing_user = check_user_exists(phone_number)
         
-        authorized_users_table.put_item(Item=item)
-        logger.info(f"Registered/renewed user: {phone_number} (expires: {expiry_date.date()})")
-        return True
+        if existing_user:
+            # User exists (likely freemium) - upgrade to premium
+            success = upgrade_to_premium(phone_number, email, expiry_date_iso)
+            if success:
+                logger.info(f"Upgraded existing user to premium: {phone_number} (expires: {expiry_date.date()})")
+            return success
+        else:
+            # New user - create premium account
+            item = {
+                'phone_number': phone_number,
+                'license_type': 'premium',
+                'license_status': 'active',
+                'email': email,
+                'registration_date': registration_date.isoformat(),
+                'expiry_date': expiry_date_iso,
+                'company_name': '',
+                'contact_name': ''
+            }
+            
+            authorized_users_table.put_item(Item=item)
+            logger.info(f"Registered new premium user: {phone_number} (expires: {expiry_date.date()})")
+            return True
         
     except Exception as e:
         logger.error(f"Error registering user {phone_number}: {str(e)}")
+        return False
+
+
+def check_user_exists(phone_number: str) -> bool:
+    """Check if user exists in authorized users table"""
+    try:
+        response = authorized_users_table.get_item(Key={'phone_number': phone_number})
+        return 'Item' in response
+    except Exception as e:
+        logger.error(f"Error checking if user exists {phone_number}: {str(e)}")
         return False
 
 
@@ -299,20 +353,23 @@ def send_welcome_message(phone_number: str, is_renewal: bool = False) -> bool:
         
         if is_renewal:
             # Renewal message for existing users
-            message = """🎉 ¡Pago confirmado! Licencia renovada
+            message = """🎉 ¡Pago confirmado! Licencia Premium renovada
 
-Tu licencia de StockAI ha sido extendida por 3 meses más.
+Tu licencia Premium de StockAI ha sido extendida por 3 meses más.
 
-✅ Tu acceso continúa activo
-📊 Puedes seguir registrando tus transacciones
+✅ Tu acceso Premium continúa activo
+📊 Interacciones ilimitadas
 💼 Todas tus funciones están disponibles
 
 ¡Gracias por confiar en StockAI! 🚀"""
         else:
-            # Welcome message for new users
-            message = """🎉 ¡Pago confirmado! Bienvenido a StockAI
+            # Welcome message for new users or freemium upgrades
+            message = """✅ ¡Pago confirmado! Bienvenido a StockAI Premium
 
-Tu licencia ha sido activada exitosamente por 3 meses.
+Tu licencia Premium ha sido activada exitosamente.
+
+📅 Válida por 3 meses
+✨ Ahora tienes acceso ilimitado a todas las funciones
 
 ¡Hola! 👋 Bienvenido/a a tu Asistente de Registro de Ventas.
 
@@ -328,7 +385,7 @@ Soy tu asistente de inteligencia artificial que te ayudará a registrar tus vent
 • "Compré 2 kg de manzanas a 8 soles el kilo"
 • O envía una foto de tu registro manual
 
-¡Empecemos a registrar tus ventas! 🚀"""
+¡Comienza a optimizar tu inventario ahora mismo! 🚀"""
         
         payload = {
             'messaging_product': 'whatsapp',

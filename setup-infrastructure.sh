@@ -6,6 +6,7 @@ USERS_TABLE="whatsapp-users"
 TRANSACTIONS_TABLE="whatsapp-transactions"
 PENDING_TRANSACTIONS_TABLE="whatsapp-pending-transactions"
 AUTHORIZED_USERS_TABLE="whatsapp-authorized-users"
+FREEMIUM_INTERACTIONS_TABLE="whatsapp-freemium-interactions"
 FUNCTION_NAME="whatsapp-ai-agent"
 
 echo "🚀 Setting up infrastructure..."
@@ -25,6 +26,17 @@ aws dynamodb create-table \
 echo "📊 Creating DynamoDB table: $AUTHORIZED_USERS_TABLE"
 aws dynamodb create-table \
     --table-name $AUTHORIZED_USERS_TABLE \
+    --attribute-definitions \
+        AttributeName=phone_number,AttributeType=S \
+    --key-schema \
+        AttributeName=phone_number,KeyType=HASH \
+    --billing-mode PAY_PER_REQUEST \
+    --region $REGION
+
+# Create Freemium Interactions DynamoDB table
+echo "📊 Creating DynamoDB table: $FREEMIUM_INTERACTIONS_TABLE"
+aws dynamodb create-table \
+    --table-name $FREEMIUM_INTERACTIONS_TABLE \
     --attribute-definitions \
         AttributeName=phone_number,AttributeType=S \
     --key-schema \
@@ -63,6 +75,7 @@ echo "⏳ Waiting for tables to be active..."
 aws dynamodb wait table-exists --table-name $USERS_TABLE --region $REGION
 aws dynamodb wait table-exists --table-name $AUTHORIZED_USERS_TABLE --region $REGION
 aws dynamodb wait table-exists --table-name $PENDING_TRANSACTIONS_TABLE --region $REGION
+aws dynamodb wait table-exists --table-name $FREEMIUM_INTERACTIONS_TABLE --region $REGION
 #aws dynamodb wait table-exists --table-name $TRANSACTIONS_TABLE --region $REGION
 
 # Create IAM policy for DynamoDB access
@@ -86,6 +99,7 @@ cat > dynamodb-policy.json << EOF
                 "arn:aws:dynamodb:$REGION:*:table/$TRANSACTIONS_TABLE",
                 "arn:aws:dynamodb:$REGION:*:table/$PENDING_TRANSACTIONS_TABLE",
                 "arn:aws:dynamodb:$REGION:*:table/$AUTHORIZED_USERS_TABLE",
+                "arn:aws:dynamodb:$REGION:*:table/$FREEMIUM_INTERACTIONS_TABLE",
                 "arn:aws:dynamodb:$REGION:*:table/$TRANSACTIONS_TABLE/index/*"
             ]
         }
@@ -109,6 +123,8 @@ aws lambda update-function-configuration \
         "TRANSACTIONS_TABLE_NAME":"'$TRANSACTIONS_TABLE'",
         "PENDING_TRANSACTIONS_TABLE_NAME":"'$PENDING_TRANSACTIONS_TABLE'",
         "AUTHORIZED_USERS_TABLE_NAME":"'$AUTHORIZED_USERS_TABLE'",
+        "FREEMIUM_INTERACTIONS_TABLE_NAME":"'$FREEMIUM_INTERACTIONS_TABLE'",
+        "FREEMIUM_DAILY_LIMIT":"5",
         "RESPONSE_MODE":"auto",
         "TRANSACTION_THRESHOLD":"4",
         "LICENSE_PRICE":"99.00",
@@ -138,6 +154,8 @@ echo "        \"USERS_TABLE_NAME\":\"$USERS_TABLE\","
 echo "        \"TRANSACTIONS_TABLE_NAME\":\"$TRANSACTIONS_TABLE\","
 echo "        \"PENDING_TRANSACTIONS_TABLE_NAME\":\"$PENDING_TRANSACTIONS_TABLE\","
 echo "        \"AUTHORIZED_USERS_TABLE_NAME\":\"$AUTHORIZED_USERS_TABLE\","
+echo "        \"FREEMIUM_INTERACTIONS_TABLE_NAME\":\"$FREEMIUM_INTERACTIONS_TABLE\","
+echo "        \"FREEMIUM_DAILY_LIMIT\":\"5\","
 echo "        \"WHATSAPP_ACCESS_TOKEN\":\"your_actual_token\","
 echo "        \"WHATSAPP_PHONE_NUMBER_ID\":\"your_actual_phone_id\","
 echo "        \"OPENAI_API_KEY\":\"your_openai_key\""

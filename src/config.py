@@ -29,6 +29,7 @@ class Config:
     TRANSACTIONS_TABLE_NAME: str = os.getenv('TRANSACTIONS_TABLE_NAME', 'whatsapp-transactions')
     PENDING_TRANSACTIONS_TABLE_NAME: str = os.getenv('PENDING_TRANSACTIONS_TABLE_NAME', 'whatsapp-pending-transactions')
     AUTHORIZED_USERS_TABLE_NAME: str = os.getenv('AUTHORIZED_USERS_TABLE_NAME', 'whatsapp-authorized-users')
+    FREEMIUM_INTERACTIONS_TABLE_NAME: str = os.getenv('FREEMIUM_INTERACTIONS_TABLE_NAME', 'whatsapp-freemium-interactions')
     AWS_REGION: str = os.getenv('AWS_REGION', 'us-east-1')
     
     # Application Configuration
@@ -49,6 +50,10 @@ class Config:
     LICENSE_PRICE: float = float(os.getenv('LICENSE_PRICE', '99.00'))  # Price in PEN
     LICENSE_CURRENCY: str = os.getenv('LICENSE_CURRENCY', 'PEN')
     PAYMENT_WEBHOOK_URL: str = os.getenv('PAYMENT_WEBHOOK_URL', '')
+    
+    # Freemium Configuration
+    FREEMIUM_DAILY_LIMIT: int = int(os.getenv('FREEMIUM_DAILY_LIMIT', '5'))
+    LIMA_TIMEZONE: str = 'America/Lima'
     
     @classmethod
     def validate_required_config(cls) -> bool:

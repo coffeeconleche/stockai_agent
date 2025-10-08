@@ -43,6 +43,12 @@ Tu tarea es extraer y parametrizar la siguiente información por producto de los
    - Ejemplo: "3 camisas a 15 soles" → cost: 15 (se asume que es el total)
 8. is_perishable: 0 para no perecedero como objetos, 1 para perecedero (comida, etc.)
 
+NORMALIZACIÓN DE TEXTO:
+- **SIEMPRE** escribe los nombres de productos y variaciones SIN TILDES (sin acentos)
+- Ejemplos: "maní" → "mani", "azúcar" → "azucar", "café" → "cafe", "limón" → "limon"
+- Esto aplica a TODOS los campos de texto: product, product_variation, quantity_units
+- Mantén las palabras en minúsculas
+
 IMPORTANTE: 
 - Si hay MÚLTIPLES transacciones en el mensaje, devuelve un array JSON con cada transacción
 - Si hay UNA sola transacción, devuelve un objeto JSON
@@ -51,8 +57,9 @@ IMPORTANTE:
 - Siempre responde en formato JSON válido (no devuelvas el tag de json como código, solo texto)
 
 Ejemplos de JSON:
-- Una venta: {"transaction_type": 1, "product": "camisa", "product_variation": "roja", "quantity": 5, "quantity_units": "piezas", "cost": 125, "is_perishable": 0}
+- Una venta: {"transaction_type": 1, "product": "camisa", "product_variation": "roja", "quantity": 5, "quantity_units": "pieza", "cost": 125, "is_perishable": 0}
 - Múltiples transacciones: [{"transaction_type": 1, "product": "camisa", "quantity": 3, "cost": 30, "is_perishable": 0}, {"transaction_type": 1, "product": "manzana", "quantity": 6, "cost": 30, "is_perishable": 1}]
+- Con tildes normalizadas: {"transaction_type": 1, "product": "mani", "quantity": 2, "quantity_units": "kg", "cost": 20, "is_perishable": 1}
 
 """
 
@@ -229,7 +236,7 @@ Tu tarea es extraer y parametrizar la siguiente información por producto de las
 2. product: El producto general en singular (ej: "camisa roja" → "camisa", "leche de cabra" → "leche de cabra")
 3. product_variation: Variaciones como color, tamaño, marca, etc. (ej: "camisa roja" → "roja")
 4. quantity: Cantidad numérica
-5. quantity_units: Unidades en el Sistema Internacional (SI) y siempre en singular (ej: kg, litros, metros). Si se mencionan unidades más pequeñas (como gramos, mililitros), se deben convertir a su equivalente en el SI (ej: "200 gramos" → quantity: 0.2, quantity_units: "kg"; "700 mililitros" → quantity: 0.7, quantity_units: "litro").
+5. quantity_units: Unidades en el Sistema Internacional (SI) y siempre en singular (ej: kg, litro, metro). Si se mencionan unidades más pequeñas (como gramos, mililitros), se deben convertir a su equivalente en el SI (ej: "200 gramos" → quantity: 0.2, quantity_units: "kg"; "700 mililitros" → quantity: 0.7, quantity_units: "litro").
 6. currency: Moneda (por defecto PEN - soles peruanos)
 7. cost: **Costo total** de la transacción del producto. **NO es el precio unitario.** 
    - Si el mensaje dice "a X soles cada una" → multiplicar cantidad × precio unitario
@@ -238,6 +245,12 @@ Tu tarea es extraer y parametrizar la siguiente información por producto de las
    - Ejemplo: "3 camisas a 15 soles" → cost: 15 (se asume que es el total)
 8. is_perishable: 0 para no perecedero como objetos, 1 para perecedero (comida, etc.)
 
+NORMALIZACIÓN DE TEXTO:
+- **SIEMPRE** escribe los nombres de productos y variaciones SIN TILDES (sin acentos)
+- Ejemplos: "maní" → "mani", "azúcar" → "azucar", "café" → "cafe", "limón" → "limon"
+- Esto aplica a TODOS los campos de texto: product, product_variation, quantity_units
+- Mantén las palabras en minúsculas
+
 IMPORTANTE: 
 - Si hay MÚLTIPLES transacciones en la imagen, devuelve un array JSON con cada transacción
 - Si hay UNA sola transacción, devuelve un objeto JSON
@@ -245,8 +258,9 @@ IMPORTANTE:
 - Siempre responde en formato JSON válido. NO INCLUYAS NINGÚN BLOQUE DE CÓDIGO (```json) EN LA RESPUESTA, SOLO EL TEXTO JSON DIRECTO.
 
 Ejemplos de JSON:
-- Una venta: {"transaction_type": 1, "product": "camisa", "product_variation": "roja", "quantity": 5, "quantity_units": "piezas", "cost": 125, "is_perishable": 0}
+- Una venta: {"transaction_type": 1, "product": "camisa", "product_variation": "roja", "quantity": 5, "quantity_units": "pieza", "cost": 125, "is_perishable": 0}
 - Múltiples transacciones: [{"transaction_type": 1, "product": "camisa", "quantity": 3, "cost": 30, "is_perishable": 0}, {"transaction_type": 1, "product": "manzana", "quantity": 6, "cost": 30, "is_perishable": 1}]
+- Con tildes normalizadas: {"transaction_type": 1, "product": "mani", "quantity": 2, "quantity_units": "kg", "cost": 20, "is_perishable": 1}
 """
 
             #response = self.client.chat.completions.create(
@@ -388,9 +402,15 @@ Parámetros a extraer:
 4. date_from: Fecha inicio en formato YYYY-MM-DD (null si no se especifica)
 5. date_to: Fecha fin en formato YYYY-MM-DD (null si no se especifica)
 
+NORMALIZACIÓN DE TEXTO:
+- **SIEMPRE** escribe los nombres de productos SIN TILDES (sin acentos)
+- Ejemplos: "maní" → "mani", "azúcar" → "azucar", "café" → "cafe", "limón" → "limon"
+- Mantén las palabras en minúsculas y en singular
+- Esto asegura consistencia con los datos almacenados
+
 IMPORTANTE:
 - Detecta palabras clave: "reporte", "necesito saber", "cuánto", "resumen", "ventas de", "compras de", etc.
-- Convierte productos a singular
+- Convierte productos a singular y sin tildes
 - Si dice "mes de agosto 2024", usa date_from: "2024-08-01", date_to: "2024-08-31"
 - Si dice "hoy", usa la fecha actual ({current_date_str})
 - Si dice "esta semana", calcula desde el lunes de esta semana hasta hoy
@@ -406,11 +426,11 @@ Ejemplos:
 - "Necesito saber mi reporte de ventas de tomate y manzanas del mes de agosto 2024"
   → {{"is_query": true, "transaction_type": 1, "products": ["tomate", "manzana"], "date_from": "2024-08-01", "date_to": "2024-08-31"}}
 
-- "Cuánto vendí de pollo esta semana"
-  → {{"is_query": true, "transaction_type": 1, "products": ["pollo"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
+- "Cuánto vendí de maní esta semana"
+  → {{"is_query": true, "transaction_type": 1, "products": ["mani"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
 
-- "Mis ventas de los últimos 30 días"
-  → {{"is_query": true, "transaction_type": 1, "products": [], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
+- "Mis ventas de azúcar y café de los últimos 30 días"
+  → {{"is_query": true, "transaction_type": 1, "products": ["azucar", "cafe"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
 
 - "Dame el resumen de todas mis compras"
   → {{"is_query": true, "transaction_type": 0, "products": [], "date_from": null, "date_to": null}}

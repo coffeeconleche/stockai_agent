@@ -12,6 +12,7 @@ from src.services.openai_service import OpenAIService
 from src.services.image_service import ImageService
 from src.services.query_service import QueryService
 from src.services.mercadopago_service import MercadoPagoService
+from src.services.freemium_service import FreemiumService
 from src.utils.message_templates import MessageTemplates
 from src.config import Config
 
@@ -30,8 +31,10 @@ class MessageService:
         self.image_service = ImageService()
         self.query_service = QueryService()
         self.mercadopago_service = MercadoPagoService()
+        self.freemium_service = FreemiumService()
         self.templates = MessageTemplates()
         self.response_mode = Config.RESPONSE_MODE  # 'text', 'image', or 'auto'
+        self.current_user_status = None  # 'premium' or 'freemium'
     
     def process_webhook_data(self, webhook_data: Dict[str, Any]) -> None:
         """Process incoming webhook data from WhatsApp"""
@@ -67,10 +70,18 @@ class MessageService:
                 # Normalize phone number
                 normalized_phone = User._normalize_phone_number(sender_phone)
                 
-                # First check if user is authorized
-                if not self.authorized_user_repo.is_user_authorized(normalized_phone):
-                    self._handle_unauthorized_user(normalized_phone, message)
+                # Check and register user if needed
+                authorized_user = self.freemium_service.check_and_register_user(normalized_phone)
+                
+                # Check if user can interact
+                can_interact, status = self.freemium_service.can_user_interact(normalized_phone)
+                
+                if not can_interact:
+                    self._handle_limit_reached(normalized_phone)
                     return
+                
+                # Store status for later use
+                self.current_user_status = status  # "premium" or "freemium"
                 
                 # Check if user exists in our system
                 user = self.user_repo.get_user(normalized_phone)
@@ -84,6 +95,60 @@ class MessageService:
                     
         except Exception as e:
             logger.error(f"Error processing message change: {str(e)}")
+    
+    def _handle_limit_reached(self, phone_number: str) -> None:
+        """Handle user who has reached daily interaction limit"""
+        try:
+            limit_message = """⚠️ Has alcanzado tu límite de interacciones gratuitas por hoy
+
+Tu límite diario se restablecerá a medianoche (hora de Lima).
+
+🌟 ¿Quieres interacciones ilimitadas?
+
+Con la licencia Premium de StockAI obtendrás:
+✅ Interacciones ilimitadas
+✅ Acceso 24/7
+✅ Soporte prioritario
+✅ Todas las funciones avanzadas
+
+💰 Solo S/ {price:.2f} por 3 meses
+
+👉 Haz clic en 'Obtener Premium' para actualizar ahora."""
+            
+            payment_link = self.mercadopago_service.create_payment_preference(phone_number)
+            
+            if payment_link:
+                self.whatsapp_service.send_interactive_message(
+                    phone_number,
+                    limit_message.format(price=Config.LICENSE_PRICE),
+                    "Obtener Premium",
+                    payment_link
+                )
+            else:
+                # Fallback if payment link generation fails
+                self.whatsapp_service.send_text_message(
+                    phone_number, 
+                    limit_message.format(price=Config.LICENSE_PRICE)
+                )
+            
+            logger.info(f"Sent limit reached message to {phone_number}")
+            
+        except Exception as e:
+            logger.error(f"Error handling limit reached for {phone_number}: {str(e)}")
+    
+    def _send_remaining_interactions_message(self, phone_number: str, remaining: int) -> None:
+        """Send message about remaining interactions"""
+        try:
+            if remaining > 0:
+                message = f"ℹ️ Te quedan {remaining} interacción{'es' if remaining != 1 else ''} gratuita{'s' if remaining != 1 else ''} hoy."
+            else:
+                message = "ℹ️ Has usado todas tus interacciones gratuitas por hoy."
+            
+            self.whatsapp_service.send_text_message(phone_number, message)
+            logger.info(f"Sent remaining interactions message to {phone_number}: {remaining} remaining")
+            
+        except Exception as e:
+            logger.error(f"Error sending remaining interactions message to {phone_number}: {str(e)}")
     
     def _handle_unauthorized_user(self, phone_number: str, message: Dict[str, Any]) -> None:
         """Handle message from unauthorized user or expired license"""
@@ -259,6 +324,14 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
             
             logger.info(f"Sent query report to {phone_number}: {len(transactions)} transactions")
             
+            # Record interaction for freemium users
+            if self.current_user_status == "freemium":
+                remaining = self.freemium_service.record_interaction(
+                    phone_number, 
+                    "query_response"
+                )
+                self._send_remaining_interactions_message(phone_number, remaining)
+            
         except Exception as e:
             logger.error(f"Error processing query request from {phone_number}: {str(e)}")
             error_msg = "Ocurrió un error al generar el reporte. Por favor, intenta de nuevo."
@@ -341,6 +414,14 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
                     confirmation_msg = f"✅ ¡Perfecto! {success_count} transacción{'es' if success_count > 1 else ''} confirmada{'s' if success_count > 1 else ''} y guardada{'s' if success_count > 1 else ''} correctamente."
                     self.whatsapp_service.send_text_message(phone_number, confirmation_msg)
                     logger.info(f"User {phone_number} confirmed {success_count} transactions")
+                    
+                    # Record interaction for freemium users
+                    if self.current_user_status == "freemium":
+                        remaining = self.freemium_service.record_interaction(
+                            phone_number, 
+                            "transaction_confirmation"
+                        )
+                        self._send_remaining_interactions_message(phone_number, remaining)
                 else:
                     error_msg = "No hay transacciones pendientes para confirmar."
                     self.whatsapp_service.send_text_message(phone_number, error_msg)
