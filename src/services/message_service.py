@@ -265,9 +265,19 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
                 
                 if image_url:
                     caption = f"✅ Registré {len(transactions)} transacción{'es' if len(transactions) > 1 else ''}"
-                    self.whatsapp_service.send_image_message(phone_number, image_url, caption)
-                    # Send confirmation buttons
-                    self._send_confirmation_buttons(phone_number)
+                    # Send image and wait for confirmation before sending buttons
+                    image_sent = self.whatsapp_service.send_image_message(phone_number, image_url, caption)
+                    
+                    if image_sent:
+                        # Add small delay to ensure image is delivered before buttons
+                        import time
+                        time.sleep(0.5)  # 500ms delay
+                        # Send confirmation buttons AFTER image
+                        self._send_confirmation_buttons(phone_number)
+                    else:
+                        # Image failed to send, fallback to text
+                        logger.warning("Image send failed, falling back to text response")
+                        self._send_text_response(phone_number, transactions, user)
                 else:
                     # Fallback to text if image generation fails
                     logger.warning("Image generation failed, falling back to text response")
