@@ -15,6 +15,9 @@ class Config:
     # Webhook Configuration
     VERIFY_TOKEN: Optional[str] = os.getenv('VERIFY_TOKEN')
     
+    # AI Provider Selection
+    AI_PROVIDER: str = os.getenv('AI_PROVIDER', 'openai')  # 'openai' or 'bedrock'
+    
     # OpenAI Configuration
     OPENAI_API_KEY: Optional[str] = os.getenv('OPENAI_API_KEY')
     DEEPSEEK_API_KEY: Optional[str] = os.getenv('DEEPSEEK_API_KEY')
@@ -23,6 +26,11 @@ class Config:
     OPENAI_AUDIO_MODEL: str = os.getenv('OPENAI_AUDIO_MODEL', 'gpt-4o-transcribe') # whisper-1
     OPENAI_IMAGE_MODEL: str = os.getenv('OPENAI_IMAGE_MODEL', 'gpt-5-nano-2025-08-07')
     GEMINI_IMAGE_MODEL: str = os.getenv('GEMINI_IMAGE_MODEL', 'gemini-2.5-flash')
+    
+    # AWS Bedrock Configuration
+    BEDROCK_REGION: str = os.getenv('BEDROCK_REGION', 'us-east-1')
+    BEDROCK_MODEL_TEXT: str = os.getenv('BEDROCK_MODEL_TEXT', 'anthropic.claude-3-haiku-20240307-v1:0')
+    BEDROCK_MODEL_VISION: str = os.getenv('BEDROCK_MODEL_VISION', 'anthropic.claude-3-5-sonnet-20240620-v1:0')
 
     # Database Configuration
     USERS_TABLE_NAME: str = os.getenv('USERS_TABLE_NAME', 'whatsapp-users')

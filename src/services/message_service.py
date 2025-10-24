@@ -9,6 +9,7 @@ from typing import Dict, Any, List
 from src.models import User, UserRepository, Transaction, TransactionRepository, AuthorizedUser, AuthorizedUserRepository, PendingTransaction, PendingTransactionRepository
 from src.services.whatsapp_service import WhatsAppService
 from src.services.openai_service import OpenAIService
+from src.services.bedrock_service import BedrockService
 from src.services.image_service import ImageService
 from src.services.query_service import QueryService
 from src.services.mercadopago_service import MercadoPagoService
@@ -27,7 +28,18 @@ class MessageService:
         self.pending_transaction_repo = PendingTransactionRepository()
         self.authorized_user_repo = AuthorizedUserRepository()
         self.whatsapp_service = WhatsAppService()
-        self.openai_service = OpenAIService()
+        
+        # Initialize AI service based on configuration
+        if Config.AI_PROVIDER == 'bedrock':
+            logger.info("Using AWS Bedrock for AI processing")
+            self.ai_service = BedrockService()
+        else:
+            logger.info("Using OpenAI/DeepSeek/Gemini for AI processing")
+            self.ai_service = OpenAIService()
+        
+        # Keep reference for backward compatibility
+        self.openai_service = self.ai_service
+        
         self.image_service = ImageService()
         self.query_service = QueryService()
         self.mercadopago_service = MercadoPagoService()
