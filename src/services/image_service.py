@@ -193,7 +193,7 @@ class ImageService:
             logger.error(f"Error generating transaction image: {str(e)}")
             return None
     
-    def generate_report_image(self, summary: Dict[str, Any], query_params: Dict[str, Any]) -> str:
+    def generate_report_image(self, summary: Dict[str, Any], query_params: Dict[str, Any], phone_number: str = None) -> str:
         """Generate a report table image and upload to S3"""
         try:
             products = summary.get('products', [])
@@ -210,11 +210,13 @@ class ImageService:
                 header_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 34)
                 cell_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
                 footer_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 36)
+                small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 28)
             except:
                 title_font = ImageFont.load_default()
                 header_font = ImageFont.load_default()
                 cell_font = ImageFont.load_default()
                 footer_font = ImageFont.load_default()
+                small_font = ImageFont.load_default()
             
             # Draw title
             transaction_type_text = ""
@@ -230,8 +232,27 @@ class ImageService:
             title_width = title_bbox[2] - title_bbox[0]
             draw.text(((self.width - title_width) // 2, 40), title, fill=self.report_header_color, font=title_font)
             
-            # Draw date range if specified
             current_y = 110
+            
+            # Draw group information if applicable
+            if phone_number and Config.ENABLE_USER_GROUPS:
+                from src.models import UserGroupRepository
+                user_group_repo = UserGroupRepository()
+                user_group = user_group_repo.get_user_group(phone_number)
+                
+                if user_group and user_group.is_active and user_group.grouped_phone_numbers:
+                    member_count = user_group.get_member_count()
+                    if user_group.group_name:
+                        group_text = f"👥 Grupo: {user_group.group_name} ({member_count} usuarios)"
+                    else:
+                        group_text = f"👥 {member_count} usuarios incluidos"
+                    
+                    group_bbox = draw.textbbox((0, 0), group_text, font=small_font)
+                    group_width = group_bbox[2] - group_bbox[0]
+                    draw.text(((self.width - group_width) // 2, current_y), group_text, fill=self.text_color, font=small_font)
+                    current_y += 45
+            
+            # Draw date range if specified
             if query_params.get('date_from') or query_params.get('date_to'):
                 date_text = ""
                 if query_params.get('date_from') and query_params.get('date_to'):

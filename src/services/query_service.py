@@ -19,9 +19,67 @@ class QueryService:
         self.dynamodb = boto3.resource('dynamodb', region_name=Config.AWS_REGION)
         self.table = self.dynamodb.Table(Config.TRANSACTIONS_TABLE_NAME)
         self.query_threshold = Config.QUERY_THRESHOLD
+        
+        # Import here to avoid circular dependency
+        from src.models import UserGroupRepository
+        self.user_group_repo = UserGroupRepository()
+    
+    def get_all_phone_numbers_for_query(self, phone_number: str) -> List[str]:
+        """
+        Get all phone numbers to query (main user + grouped members)
+        
+        Args:
+            phone_number: The requesting user's phone number
+            
+        Returns:
+            List of phone numbers including the main user and grouped members
+        """
+        try:
+            # Always include the requesting user
+            phone_numbers = [phone_number]
+            
+            # Check if user groups feature is enabled
+            if not Config.ENABLE_USER_GROUPS:
+                return phone_numbers
+            
+            # Check if user has a group
+            user_group = self.user_group_repo.get_user_group(phone_number)
+            
+            if user_group and user_group.is_active and user_group.grouped_phone_numbers:
+                phone_numbers.extend(user_group.grouped_phone_numbers)
+                logger.info(f"User {phone_number} has group with {len(user_group.grouped_phone_numbers)} members")
+            
+            return phone_numbers
+            
+        except Exception as e:
+            logger.error(f"Error getting phone numbers for query: {str(e)}")
+            # Return at least the requesting user
+            return [phone_number]
     
     def query_transactions(self, phone_number: str, query_params: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Query transactions based on parameters - optimized for all scenarios"""
+        """Query transactions based on parameters - supports grouped queries"""
+        try:
+            # Get all phone numbers to query (main + grouped)
+            phone_numbers = self.get_all_phone_numbers_for_query(phone_number)
+            
+            logger.info(f"Querying transactions for {len(phone_numbers)} phone number(s)")
+            
+            # Query transactions for all phone numbers
+            all_transactions = []
+            
+            for phone in phone_numbers:
+                transactions = self._query_single_phone(phone, query_params)
+                all_transactions.extend(transactions)
+            
+            logger.info(f"Total transactions found: {len(all_transactions)}")
+            return all_transactions
+            
+        except Exception as e:
+            logger.error(f"Error querying transactions: {str(e)}")
+            return []
+    
+    def _query_single_phone(self, phone_number: str, query_params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Query transactions for a single phone number"""
         try:
             date_from = query_params.get('date_from')
             date_to = query_params.get('date_to')
@@ -127,11 +185,11 @@ class QueryService:
                 ]
                 logger.info(f"Filtered by products={products}: {len(transactions)} items")
             
-            logger.info(f"Final result: {len(transactions)} transactions")
+            logger.info(f"Final result for {phone_number}: {len(transactions)} transactions")
             return transactions
             
         except Exception as e:
-            logger.error(f"Error querying transactions: {str(e)}")
+            logger.error(f"Error querying transactions for {phone_number}: {str(e)}")
             return []
     
     def summarize_transactions(self, transactions: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -186,7 +244,7 @@ class QueryService:
             logger.error(f"Error checking if should use image: {str(e)}")
             return False
     
-    def format_summary_text(self, summary: Dict[str, Any], query_params: Dict[str, Any]) -> str:
+    def format_summary_text(self, summary: Dict[str, Any], query_params: Dict[str, Any], phone_number: str = None) -> str:
         """Format summary as text message"""
         try:
             # Header
@@ -197,6 +255,17 @@ class QueryService:
                 transaction_type_text = "Compras"
             else:
                 transaction_type_text = "Transacciones"
+            
+            # Group information
+            group_text = ""
+            if phone_number and Config.ENABLE_USER_GROUPS:
+                user_group = self.user_group_repo.get_user_group(phone_number)
+                if user_group and user_group.is_active and user_group.grouped_phone_numbers:
+                    member_count = user_group.get_member_count()
+                    if user_group.group_name:
+                        group_text = f"\n👥 Grupo: {user_group.group_name} ({member_count} usuarios)"
+                    else:
+                        group_text = f"\n👥 {member_count} usuarios incluidos"
             
             # Date range
             date_text = ""
@@ -215,7 +284,7 @@ class QueryService:
                 products_list = ", ".join(query_params['products'])
                 products_text = f"\n🛍️ Productos: {products_list}"
             
-            message = f"📊 **Reporte de {transaction_type_text}**{date_text}{products_text}\n\n"
+            message = f"📊 **Reporte de {transaction_type_text}**{group_text}{date_text}{products_text}\n\n"
             
             # Products summary
             if summary['products']:

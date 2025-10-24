@@ -38,6 +38,7 @@ class Config:
     PENDING_TRANSACTIONS_TABLE_NAME: str = os.getenv('PENDING_TRANSACTIONS_TABLE_NAME', 'whatsapp-pending-transactions')
     AUTHORIZED_USERS_TABLE_NAME: str = os.getenv('AUTHORIZED_USERS_TABLE_NAME', 'whatsapp-authorized-users')
     FREEMIUM_INTERACTIONS_TABLE_NAME: str = os.getenv('FREEMIUM_INTERACTIONS_TABLE_NAME', 'whatsapp-freemium-interactions')
+    USER_GROUPS_TABLE_NAME: str = os.getenv('USER_GROUPS_TABLE_NAME', 'whatsapp-user-groups')
     AWS_REGION: str = os.getenv('AWS_REGION', 'us-east-1')
     
     # Application Configuration
@@ -63,6 +64,10 @@ class Config:
     # Freemium Configuration
     FREEMIUM_DAILY_LIMIT: int = int(os.getenv('FREEMIUM_DAILY_LIMIT', '5'))
     LIMA_TIMEZONE: str = 'America/Lima'
+    
+    # User Groups Configuration
+    MAX_GROUP_MEMBERS: int = int(os.getenv('MAX_GROUP_MEMBERS', '10'))
+    ENABLE_USER_GROUPS: bool = os.getenv('ENABLE_USER_GROUPS', 'true').lower() == 'true'
     
     @classmethod
     def validate_required_config(cls) -> bool:

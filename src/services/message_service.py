@@ -343,7 +343,7 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
             # Determine if should send as image or text
             if self.query_service.should_use_image(summary):
                 # Generate and send report image
-                image_url = self.image_service.generate_report_image(summary, query_params)
+                image_url = self.image_service.generate_report_image(summary, query_params, phone_number)
                 
                 if image_url:
                     product_count = len(summary.get('products', []))
@@ -353,11 +353,11 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
                 else:
                     # Fallback to text if image generation fails
                     logger.warning("Report image generation failed, falling back to text")
-                    report_text = self.query_service.format_summary_text(summary, query_params)
+                    report_text = self.query_service.format_summary_text(summary, query_params, phone_number)
                     self.whatsapp_service.send_text_message(phone_number, report_text)
             else:
                 # Send as text for small reports
-                report_text = self.query_service.format_summary_text(summary, query_params)
+                report_text = self.query_service.format_summary_text(summary, query_params, phone_number)
                 self.whatsapp_service.send_text_message(phone_number, report_text)
                 logger.info(f"Sent query report as text to {phone_number}: {len(transactions)} transactions")
             
