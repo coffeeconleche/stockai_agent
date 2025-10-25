@@ -43,6 +43,21 @@ Tu tarea es extraer y parametrizar la siguiente información por producto de los
    - Ejemplo: "3 camisas a 15 soles" → cost: 15 (se asume que es el total)
 8. is_perishable: 0 para no perecedero como objetos, 1 para perecedero (comida, etc.)
 
+CORRECCIÓN DE ERRORES ORTOGRÁFICOS:
+- **VERIFICA** que el producto mencionado sea un producto real que existe
+- Si detectas un error ortográfico, **CORRIGE** al producto correcto
+- Ejemplos de correcciones:
+  * "camonte" → "camote" (el usuario quiso decir camote)
+  * "tomat" → "tomate"
+  * "mansana" → "manzana"
+  * "asuca" → "azucar"
+  * "arrós" → "arroz"
+  * "lechi" → "leche"
+  * "papá" → "papa"
+  * "yuca" (correcto, no cambiar)
+- Si no estás seguro del producto correcto, usa el nombre más cercano que tenga sentido
+- Solo registra productos que existan en la vida real (comida, ropa, objetos, etc.)
+
 NORMALIZACIÓN DE TEXTO:
 - **SIEMPRE** escribe los nombres de productos y variaciones SIN TILDES (sin acentos)
 - Ejemplos: "maní" → "mani", "azúcar" → "azucar", "café" → "cafe", "limón" → "limon"
@@ -245,6 +260,19 @@ Tu tarea es extraer y parametrizar la siguiente información por producto de las
    - Ejemplo: "3 camisas a 15 soles" → cost: 15 (se asume que es el total)
 8. is_perishable: 0 para no perecedero como objetos, 1 para perecedero (comida, etc.)
 
+CORRECCIÓN DE ERRORES ORTOGRÁFICOS:
+- **VERIFICA** que el producto mencionado sea un producto real que existe
+- Si detectas un error ortográfico en la imagen, **CORRIGE** al producto correcto
+- Ejemplos de correcciones:
+  * "camonte" → "camote"
+  * "tomat" → "tomate"
+  * "mansana" → "manzana"
+  * "asuca" → "azucar"
+  * "arrós" → "arroz"
+  * "lechi" → "leche"
+- Si la escritura es poco clara, usa el producto más lógico según el contexto
+- Solo registra productos que existan en la vida real
+
 NORMALIZACIÓN DE TEXTO:
 - **SIEMPRE** escribe los nombres de productos y variaciones SIN TILDES (sin acentos)
 - Ejemplos: "maní" → "mani", "azúcar" → "azucar", "café" → "cafe", "limón" → "limon"
@@ -401,6 +429,17 @@ Parámetros a extraer:
 3. products: Lista de productos en singular (ej: ["tomate", "manzana"])
 4. date_from: Fecha inicio en formato YYYY-MM-DD (null si no se especifica)
 5. date_to: Fecha fin en formato YYYY-MM-DD (null si no se especifica)
+
+CORRECCIÓN DE ERRORES ORTOGRÁFICOS:
+- **VERIFICA** que los productos mencionados sean productos reales que existen
+- Si detectas un error ortográfico, **CORRIGE** al producto correcto
+- Ejemplos de correcciones:
+  * "camonte" → "camote"
+  * "tomat" → "tomate"
+  * "mansana" → "manzana"
+  * "asuca" → "azucar"
+  * "arrós" → "arroz"
+- Esto ayuda a encontrar los productos correctos en la base de datos
 
 NORMALIZACIÓN DE TEXTO:
 - **SIEMPRE** escribe los nombres de productos SIN TILDES (sin acentos)
