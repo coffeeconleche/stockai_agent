@@ -400,14 +400,15 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
     def _send_confirmation_buttons(self, phone_number: str) -> None:
         """Send confirmation buttons for transaction verification"""
         try:
-            confirmation_message = "Si los productos están correctamente identificados, click en *Confirmar*. Caso contrario, click en *Editar*."
+            confirmation_message = "Si los productos están correctamente identificados, click en *Confirmar*. Caso contrario, click en *Editar* o *Cancelar*."
             
             self.whatsapp_service.send_reply_buttons(
                 phone_number,
                 confirmation_message,
                 [
                     {"id": "confirm_transaction", "title": "Confirmar"},
-                    {"id": "edit_transaction", "title": "Editar"}
+                    {"id": "edit_transaction", "title": "Editar"},
+                    {"id": "cancel_transaction", "title": "Cancelar"}
                 ]
             )
             
@@ -480,6 +481,24 @@ Puedes enviar:
 Ejemplo: "Vendí 5 camisas rojas a 25 soles cada una" """
                 self.whatsapp_service.send_text_message(phone_number, edit_msg)
                 logger.info(f"User {phone_number} requested to edit transactions")
+            
+            elif button_id == 'cancel_transaction':
+                # User wants to cancel - delete pending transactions
+                pending = self.pending_transaction_repo.get_pending_transaction(phone_number)
+                
+                if pending:
+                    # Delete pending transactions
+                    if self.pending_transaction_repo.delete_pending_transaction(phone_number):
+                        cancel_msg = "❌ Registro cancelado. Las transacciones no han sido guardadas."
+                        self.whatsapp_service.send_text_message(phone_number, cancel_msg)
+                        logger.info(f"User {phone_number} cancelled transaction registration")
+                    else:
+                        error_msg = "Error al cancelar el registro. Por favor, intenta de nuevo."
+                        self.whatsapp_service.send_text_message(phone_number, error_msg)
+                        logger.error(f"Failed to delete pending transaction for {phone_number}")
+                else:
+                    no_pending_msg = "No hay transacciones pendientes para cancelar."
+                    self.whatsapp_service.send_text_message(phone_number, no_pending_msg)
             
             else:
                 logger.warning(f"Unknown button ID: {button_id}")
