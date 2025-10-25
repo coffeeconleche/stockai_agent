@@ -400,15 +400,24 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
     def _send_confirmation_buttons(self, phone_number: str) -> None:
         """Send confirmation buttons for transaction verification"""
         try:
+            # Get current pending transaction to include session_id in buttons
+            pending = self.pending_transaction_repo.get_pending_transaction(phone_number)
+            
+            if not pending:
+                logger.error(f"No pending transaction found for {phone_number} when sending buttons")
+                return
+            
+            session_id = pending.session_id
+            
             confirmation_message = "Si los productos están correctamente identificados, click en *Confirmar*. Caso contrario, click en *Editar* o *Cancelar*."
             
             self.whatsapp_service.send_reply_buttons(
                 phone_number,
                 confirmation_message,
                 [
-                    {"id": "confirm_transaction", "title": "Confirmar"},
-                    {"id": "edit_transaction", "title": "Editar"},
-                    {"id": "cancel_transaction", "title": "Cancelar"}
+                    {"id": f"confirm_transaction:{session_id}", "title": "Confirmar"},
+                    {"id": f"edit_transaction:{session_id}", "title": "Editar"},
+                    {"id": f"cancel_transaction:{session_id}", "title": "Cancelar"}
                 ]
             )
             
@@ -421,10 +430,27 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
             button_reply = message.get('interactive', {}).get('button_reply', {})
             button_id = button_reply.get('id', '')
             
-            if button_id == 'confirm_transaction':
-                # Get pending transactions
-                pending = self.pending_transaction_repo.get_pending_transaction(phone_number)
-                
+            # Parse button_id to extract action and session_id
+            if ':' in button_id:
+                action, session_id = button_id.split(':', 1)
+            else:
+                # Old format without session_id (backward compatibility)
+                action = button_id
+                session_id = None
+            
+            # Get current pending transaction
+            pending = self.pending_transaction_repo.get_pending_transaction(phone_number)
+            
+            # Validate session_id if present
+            if session_id and pending:
+                if pending.session_id != session_id:
+                    # Button is from an old session, ignore it
+                    logger.warning(f"Ignoring stale button click from {phone_number}. Expected session: {pending.session_id}, got: {session_id}")
+                    stale_msg = "⚠️ Este botón ya no es válido. Por favor, usa los botones del mensaje más reciente."
+                    self.whatsapp_service.send_text_message(phone_number, stale_msg)
+                    return
+            
+            if action == 'confirm_transaction':
                 if pending:
                     # Save all transactions to permanent table
                     success_count = 0
@@ -464,7 +490,7 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
                     error_msg = "No hay transacciones pendientes para confirmar."
                     self.whatsapp_service.send_text_message(phone_number, error_msg)
                 
-            elif button_id == 'edit_transaction':
+            elif action == 'edit_transaction':
                 # User wants to edit - keep pending transactions for merging
                 edit_msg = """📝 Para editar, envía la información correcta.
 
@@ -482,10 +508,7 @@ Ejemplo: "Vendí 5 camisas rojas a 25 soles cada una" """
                 self.whatsapp_service.send_text_message(phone_number, edit_msg)
                 logger.info(f"User {phone_number} requested to edit transactions")
             
-            elif button_id == 'cancel_transaction':
-                # User wants to cancel - delete pending transactions
-                pending = self.pending_transaction_repo.get_pending_transaction(phone_number)
-                
+            elif action == 'cancel_transaction':
                 if pending:
                     # Delete pending transactions
                     if self.pending_transaction_repo.delete_pending_transaction(phone_number):
@@ -501,7 +524,7 @@ Ejemplo: "Vendí 5 camisas rojas a 25 soles cada una" """
                     self.whatsapp_service.send_text_message(phone_number, no_pending_msg)
             
             else:
-                logger.warning(f"Unknown button ID: {button_id}")
+                logger.warning(f"Unknown button action: {action}")
                 
         except Exception as e:
             logger.error(f"Error processing button response from {phone_number}: {str(e)}")
