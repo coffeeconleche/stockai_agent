@@ -182,6 +182,48 @@ class WhatsAppService:
             logger.error(f"Error sending WhatsApp image message to {to_phone}: {str(e)}")
             return False
     
+    def send_document_message(self, to_phone: str, document_url: str, filename: str = None, caption: str = "") -> bool:
+        """Send a document message via WhatsApp Business API"""
+        try:
+            if not self.access_token or not self.phone_number_id:
+                logger.error("WhatsApp API credentials not configured")
+                return False
+            
+            url = f"{self.api_url}/messages"
+            
+            headers = {
+                'Authorization': f'Bearer {self.access_token}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'messaging_product': 'whatsapp',
+                'to': to_phone.replace('+', ''),
+                'type': 'document',
+                'document': {
+                    'link': document_url
+                }
+            }
+            
+            if filename:
+                payload['document']['filename'] = filename
+            
+            if caption:
+                payload['document']['caption'] = caption
+            
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            
+            if response.status_code == 200:
+                logger.info(f"Document message sent successfully to {to_phone}")
+                return True
+            else:
+                logger.error(f"Failed to send document message to {to_phone}: {response.status_code} - {response.text}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error sending WhatsApp document message to {to_phone}: {str(e)}")
+            return False
+    
     def send_reply_buttons(self, to_phone: str, message_text: str, buttons: list) -> bool:
         """Send an interactive message with reply buttons"""
         try:

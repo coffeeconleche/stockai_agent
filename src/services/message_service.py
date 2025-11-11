@@ -44,6 +44,10 @@ class MessageService:
         self.query_service = QueryService()
         self.mercadopago_service = MercadoPagoService()
         self.freemium_service = FreemiumService()
+        
+        # Import Excel service here to avoid circular imports
+        from src.services.excel_service import ExcelService
+        self.excel_service = ExcelService()
         self.templates = MessageTemplates()
         self.response_mode = Config.RESPONSE_MODE  # 'text', 'image', or 'auto'
         self.current_user_status = None  # 'premium' or 'freemium'
@@ -340,9 +344,58 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
             # Summarize transactions
             summary = self.query_service.summarize_transactions(transactions)
             
-            # Determine if should send as image or text
-            if self.query_service.should_use_image(summary):
-                # Generate and send report image
+            # Determine report format based on product count
+            if self.query_service.should_use_excel(summary):
+                # Generate and send Excel file for large reports
+                excel_url, filename = self.excel_service.generate_report_excel(summary, query_params, phone_number)
+                
+                if excel_url and filename:
+                    product_count = len(summary.get('products', []))
+                    
+                    # Send document attachment
+                    caption = f"📊 Reporte de {product_count} productos"
+                    document_sent = self.whatsapp_service.send_document_message(
+                        phone_number, 
+                        excel_url, 
+                        filename=filename,
+                        caption=caption
+                    )
+                    
+                    if document_sent:
+                        # Send additional info message
+                        info_message = f"📋 El archivo Excel incluye:\n"
+                        info_message += f"• Resumen ejecutivo\n"
+                        info_message += f"• Detalle por producto\n"
+                        info_message += f"• Top 10 productos\n"
+                        info_message += f"• Datos listos para gráficos"
+                        
+                        self.whatsapp_service.send_text_message(phone_number, info_message)
+                        logger.info(f"Sent query report as Excel document to {phone_number}: {len(transactions)} transactions")
+                    else:
+                        # Fallback: send URL if document send fails
+                        excel_message = f"📊 **Reporte Completo en Excel**\n\n"
+                        excel_message += f"📈 {product_count} productos encontrados\n"
+                        excel_message += f"💾 Descarga: {excel_url}"
+                        self.whatsapp_service.send_text_message(phone_number, excel_message)
+                        logger.warning(f"Document send failed, sent URL instead to {phone_number}")
+                else:
+                    # Fallback to image if Excel generation fails
+                    logger.warning("Excel generation failed, falling back to image")
+                    image_url = self.image_service.generate_report_image(summary, query_params, phone_number)
+                    
+                    if image_url:
+                        product_count = len(summary.get('products', []))
+                        caption = f"📊 Reporte de {product_count} producto{'s' if product_count != 1 else ''}"
+                        self.whatsapp_service.send_image_message(phone_number, image_url, caption)
+                        logger.info(f"Sent query report as image (Excel fallback) to {phone_number}: {len(transactions)} transactions")
+                    else:
+                        # Final fallback to text
+                        report_text = self.query_service.format_summary_text(summary, query_params, phone_number)
+                        self.whatsapp_service.send_text_message(phone_number, report_text)
+                        logger.warning(f"Both Excel and image failed, sent as text to {phone_number}")
+                        
+            elif self.query_service.should_use_image(summary):
+                # Generate and send report image for medium reports
                 image_url = self.image_service.generate_report_image(summary, query_params, phone_number)
                 
                 if image_url:

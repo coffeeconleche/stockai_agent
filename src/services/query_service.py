@@ -239,9 +239,18 @@ class QueryService:
         """Determine if report should be sent as image based on number of products"""
         try:
             product_count = len(summary.get('products', []))
-            return product_count >= self.query_threshold
+            return product_count >= self.query_threshold and product_count < Config.EXCEL_THRESHOLD
         except Exception as e:
             logger.error(f"Error checking if should use image: {str(e)}")
+            return False
+    
+    def should_use_excel(self, summary: Dict[str, Any]) -> bool:
+        """Determine if report should be sent as Excel file based on number of products"""
+        try:
+            product_count = len(summary.get('products', []))
+            return product_count >= Config.EXCEL_THRESHOLD
+        except Exception as e:
+            logger.error(f"Error checking if should use Excel: {str(e)}")
             return False
     
     def format_summary_text(self, summary: Dict[str, Any], query_params: Dict[str, Any], phone_number: str = None) -> str:
