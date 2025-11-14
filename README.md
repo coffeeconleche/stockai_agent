@@ -33,6 +33,13 @@ Bot: 📊 [Sends Excel file with 15 products]
 
 ### Advanced Features
 - ✅ **Query Reports** - Generate transaction summaries and reports
+- ✅ **Trends Analysis** - Comprehensive time-series analysis with:
+  - Weekly aggregation over 90 days (default)
+  - Growth rate calculation
+  - Trend direction (increasing/decreasing/stable)
+  - Top performers identification
+  - AI-generated insights and recommendations
+  - 5-sheet Excel workbook with detailed analysis
 - ✅ **Smart Report Formatting** - Automatic format selection based on data size:
   - Small reports (1-2 products): Text message
   - Medium reports (3-9 products): Image table
@@ -202,6 +209,18 @@ Users can send photos of their handwritten or printed transaction records.
 - "Compras de enero"
 - "Reporte de ventas de productos perecederos"
 
+#### Trends Analysis
+- "Tendencias de mis ventas" → 5-sheet Excel with 90-day analysis
+- "Análisis de tendencias de maní y azúcar" → Focused trends report
+- "Cómo van mis compras" → Purchase trends with insights
+- **Features:**
+  - Weekly aggregation and growth rates
+  - Trend direction (increasing/decreasing/stable)
+  - Top 5 growing and declining products
+  - AI-generated insights and recommendations
+  - Volatility detection
+  - Recent vs historical comparison
+
 ### Excel Reports (10+ Products)
 
 When reports contain 10 or more products, users receive:
@@ -277,6 +296,7 @@ This generates a test Excel file and uploads it to S3.
 ## Documentation
 
 ### Feature Documentation
+- **[Trends Analysis](docs/TRENDS_ANALYSIS_FEATURE.md)** - Time-series analysis and insights
 - **[Excel Reports Feature](docs/EXCEL_REPORTS_FEATURE.md)** - Complete Excel reports documentation
 - **[Excel Quick Start](docs/EXCEL_QUICK_START.md)** - Quick reference guide
 - **[Excel Deployment Guide](docs/EXCEL_DEPLOYMENT_GUIDE.md)** - Step-by-step deployment

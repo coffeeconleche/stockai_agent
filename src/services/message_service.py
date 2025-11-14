@@ -45,9 +45,11 @@ class MessageService:
         self.mercadopago_service = MercadoPagoService()
         self.freemium_service = FreemiumService()
         
-        # Import Excel service here to avoid circular imports
+        # Import Excel and Trends services here to avoid circular imports
         from src.services.excel_service import ExcelService
+        from src.services.trends_service import TrendsService
         self.excel_service = ExcelService()
+        self.trends_service = TrendsService()
         self.templates = MessageTemplates()
         self.response_mode = Config.RESPONSE_MODE  # 'text', 'image', or 'auto'
         self.current_user_status = None  # 'premium' or 'freemium'
@@ -333,6 +335,11 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
         try:
             logger.info(f"Processing query request from {phone_number}: {query_params}")
             
+            # Check if this is a trends analysis request
+            if query_params.get('is_trend_analysis'):
+                self._process_trends_analysis(phone_number, query_params, user)
+                return
+            
             # Query transactions
             transactions = self.query_service.query_transactions(phone_number, query_params)
             
@@ -425,6 +432,89 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
         except Exception as e:
             logger.error(f"Error processing query request from {phone_number}: {str(e)}")
             error_msg = "Ocurrió un error al generar el reporte. Por favor, intenta de nuevo."
+            self.whatsapp_service.send_text_message(phone_number, error_msg)
+    
+    def _process_trends_analysis(self, phone_number: str, query_params: Dict[str, Any], user: User) -> None:
+        """Process trends analysis request"""
+        try:
+            logger.info(f"Processing trends analysis from {phone_number}: {query_params}")
+            
+            # Query transactions
+            transactions = self.query_service.query_transactions(phone_number, query_params)
+            
+            if not transactions:
+                no_data_msg = "No se encontraron transacciones para análisis de tendencias. 🔍\n\n"
+                no_data_msg += "💡 El análisis de tendencias requiere datos históricos de al menos 2 semanas."
+                self.whatsapp_service.send_text_message(phone_number, no_data_msg)
+                return
+            
+            # Check if we have enough data
+            if len(transactions) < 5:
+                insufficient_msg = "⚠️ Datos insuficientes para análisis de tendencias.\n\n"
+                insufficient_msg += f"Se encontraron {len(transactions)} transacciones, pero se necesitan al menos 5 para un análisis significativo.\n\n"
+                insufficient_msg += "💡 Intenta con un período más amplio o sin filtros de productos."
+                self.whatsapp_service.send_text_message(phone_number, insufficient_msg)
+                return
+            
+            # Analyze trends
+            trends_data = self.trends_service.analyze_trends(transactions, query_params)
+            
+            if not trends_data.get('has_data'):
+                error_msg = "No se pudo generar el análisis de tendencias. Por favor, intenta de nuevo."
+                self.whatsapp_service.send_text_message(phone_number, error_msg)
+                return
+            
+            # Generate Excel with trends analysis
+            excel_url, filename = self.excel_service.generate_trends_excel(trends_data, query_params, phone_number)
+            
+            if excel_url and filename:
+                # Send document attachment
+                caption = f"📈 Análisis de Tendencias - {trends_data.get('total_products', 0)} productos"
+                document_sent = self.whatsapp_service.send_document_message(
+                    phone_number,
+                    excel_url,
+                    filename=filename,
+                    caption=caption
+                )
+                
+                if document_sent:
+                    # Send insights summary
+                    insights = trends_data.get('insights', [])
+                    insights_msg = "📊 **Insights Principales:**\n\n"
+                    for insight in insights[:5]:  # Top 5 insights
+                        insights_msg += f"• {insight}\n"
+                    
+                    insights_msg += f"\n📋 El archivo Excel incluye:\n"
+                    insights_msg += f"• Resumen ejecutivo\n"
+                    insights_msg += f"• Tendencias por producto\n"
+                    insights_msg += f"• Serie temporal semanal\n"
+                    insights_msg += f"• Top performers\n"
+                    insights_msg += f"• Insights y recomendaciones"
+                    
+                    self.whatsapp_service.send_text_message(phone_number, insights_msg)
+                    logger.info(f"Sent trends analysis Excel to {phone_number}: {len(transactions)} transactions")
+                else:
+                    # Fallback: send URL
+                    fallback_msg = f"📈 **Análisis de Tendencias**\n\n"
+                    fallback_msg += f"📊 {trends_data.get('total_products', 0)} productos analizados\n"
+                    fallback_msg += f"💾 Descarga: {excel_url}"
+                    self.whatsapp_service.send_text_message(phone_number, fallback_msg)
+                    logger.warning(f"Document send failed, sent URL instead to {phone_number}")
+            else:
+                error_msg = "No se pudo generar el archivo de análisis. Por favor, intenta de nuevo."
+                self.whatsapp_service.send_text_message(phone_number, error_msg)
+            
+            # Record interaction for freemium users
+            if self.current_user_status == "freemium":
+                remaining = self.freemium_service.record_interaction(
+                    phone_number,
+                    "trends_analysis"
+                )
+                self._send_remaining_interactions_message(phone_number, remaining)
+            
+        except Exception as e:
+            logger.error(f"Error processing trends analysis from {phone_number}: {str(e)}")
+            error_msg = "Ocurrió un error al generar el análisis de tendencias. Por favor, intenta de nuevo."
             self.whatsapp_service.send_text_message(phone_number, error_msg)
     
     def _merge_transactions(self, existing: List[Dict[str, Any]], new: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

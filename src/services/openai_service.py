@@ -425,10 +425,11 @@ Tu tarea es determinar si el mensaje es una SOLICITUD DE REPORTE y extraer los p
 
 Parámetros a extraer:
 1. is_query: true si es una solicitud de reporte, false si no lo es
-2. transaction_type: 0 para compras, 1 para ventas, null para ambos
-3. products: Lista de productos en singular (ej: ["tomate", "manzana"])
-4. date_from: Fecha inicio en formato YYYY-MM-DD (null si no se especifica)
-5. date_to: Fecha fin en formato YYYY-MM-DD (null si no se especifica)
+2. is_trend_analysis: true si solicita análisis de tendencias/trends, false si no
+3. transaction_type: 0 para compras, 1 para ventas, null para ambos
+4. products: Lista de productos en singular (ej: ["tomate", "manzana"])
+5. date_from: Fecha inicio en formato YYYY-MM-DD (null si no se especifica)
+6. date_to: Fecha fin en formato YYYY-MM-DD (null si no se especifica)
 
 CORRECCIÓN DE ERRORES ORTOGRÁFICOS:
 - **VERIFICA** que los productos mencionados sean productos reales que existen
@@ -447,8 +448,14 @@ NORMALIZACIÓN DE TEXTO:
 - Mantén las palabras en minúsculas y en singular
 - Esto asegura consistencia con los datos almacenados
 
+ANÁLISIS DE TENDENCIAS:
+- Si el usuario menciona "tendencias", "trends", "análisis de tendencias", "cómo van", "evolución", marca is_trend_analysis: true
+- Para análisis de tendencias SIN fechas específicas, usa automáticamente los últimos 90 días
+- Para análisis de tendencias CON fechas, respeta las fechas del usuario
+- El análisis de tendencias requiere datos históricos para calcular cambios y patrones
+
 IMPORTANTE:
-- Detecta palabras clave: "reporte", "necesito saber", "cuánto", "resumen", "ventas de", "compras de", etc.
+- Detecta palabras clave: "reporte", "necesito saber", "cuánto", "resumen", "ventas de", "compras de", "tendencias", "trends", etc.
 - Convierte productos a singular y sin tildes
 - Si dice "mes de agosto 2024", usa date_from: "2024-08-01", date_to: "2024-08-31"
 - Si dice "hoy", usa la fecha actual ({current_date_str})
@@ -457,25 +464,37 @@ IMPORTANTE:
 - Si dice "últimos 7 días" o "última semana", resta 7 días desde hoy
 - Si dice "este mes", usa desde el día 1 del mes actual hasta hoy
 - Si dice "año 2024", usa "2024-01-01" a "2024-12-31"
-- Si no menciona fechas, usa null para ambos
+- Si solicita tendencias sin fechas, calcula automáticamente últimos 90 días desde hoy
+- Si no menciona fechas (y no es análisis de tendencias), usa null para ambos
 - Si no menciona productos específicos, usa lista vacía []
 - Siempre responde en formato JSON válido (no devuelvas el tag de json como código, solo texto)
 
 Ejemplos:
 - "Necesito saber mi reporte de ventas de tomate y manzanas del mes de agosto 2024"
-  → {{"is_query": true, "transaction_type": 1, "products": ["tomate", "manzana"], "date_from": "2024-08-01", "date_to": "2024-08-31"}}
+  → {{"is_query": true, "is_trend_analysis": false, "transaction_type": 1, "products": ["tomate", "manzana"], "date_from": "2024-08-01", "date_to": "2024-08-31"}}
 
 - "Cuánto vendí de maní esta semana"
-  → {{"is_query": true, "transaction_type": 1, "products": ["mani"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
+  → {{"is_query": true, "is_trend_analysis": false, "transaction_type": 1, "products": ["mani"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
 
 - "Mis ventas de azúcar y café de los últimos 30 días"
-  → {{"is_query": true, "transaction_type": 1, "products": ["azucar", "cafe"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
+  → {{"is_query": true, "is_trend_analysis": false, "transaction_type": 1, "products": ["azucar", "cafe"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
 
 - "Dame el resumen de todas mis compras"
-  → {{"is_query": true, "transaction_type": 0, "products": [], "date_from": null, "date_to": null}}
+  → {{"is_query": true, "is_trend_analysis": false, "transaction_type": 0, "products": [], "date_from": null, "date_to": null}}
+
+- "Muéstrame las tendencias de ventas de maní"
+  → {{"is_query": true, "is_trend_analysis": true, "transaction_type": 1, "products": ["mani"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
+  (Nota: date_from será 90 días antes de hoy)
+
+- "Análisis de tendencias de mis compras"
+  → {{"is_query": true, "is_trend_analysis": true, "transaction_type": 0, "products": [], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
+  (Nota: date_from será 90 días antes de hoy)
+
+- "Cómo van mis ventas de azúcar y café"
+  → {{"is_query": true, "is_trend_analysis": true, "transaction_type": 1, "products": ["azucar", "cafe"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
 
 - "Vendí 5 camisas a 25 soles"
-  → {{"is_query": false}}"""
+  → {{"is_query": false, "is_trend_analysis": false}}"""
 
 
             user_prompt = f"Analiza este mensaje: '{text_content}'"
@@ -519,11 +538,19 @@ Ejemplos:
             
             try:
                 result = json.loads(result_text)
+                
+                # If it's a trend analysis request without specific dates, set 90-day range
+                if result.get('is_trend_analysis') and not result.get('date_from'):
+                    days_ago_90 = current_date - timedelta(days=90)
+                    result['date_from'] = days_ago_90.strftime('%Y-%m-%d')
+                    result['date_to'] = current_date_str
+                    logger.info(f"Trend analysis: Auto-set date range to last 90 days ({result['date_from']} to {result['date_to']})")
+                
                 return result
                 
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse Deepseek query JSON response: {result_text}")
-                return {"is_query": False}
+                return {"is_query": False, "is_trend_analysis": False}
                 
         except Exception as e:
             logger.error(f"Error processing query with Deepseek: {str(e)}")
