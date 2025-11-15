@@ -19,7 +19,7 @@ class ExcelService:
         self.s3_client = boto3.client('s3', region_name=Config.AWS_REGION)
         self.bucket_name = Config.S3_BUCKET_NAME
     
-    def generate_trends_excel(self, trends_data: Dict[str, Any], query_params: Dict[str, Any], phone_number: str = None) -> tuple:
+    def generate_trends_excel(self, trends_data: Dict[str, Any], query_params: Dict[str, Any], phone_number: str = None, transactions: List[Dict[str, Any]] = None) -> tuple:
         """Generate Excel file with trends analysis"""
         try:
             if not trends_data.get('has_data'):
@@ -41,7 +41,11 @@ class ExcelService:
                 # Sheet 4: Top Performers
                 self._create_top_performers_sheet(writer, trends_data)
                 
-                # Sheet 5: Insights & Recommendations
+                # Sheet 5: Heatmap Calendar
+                if transactions:
+                    self._create_heatmap_calendar_sheet(writer, trends_data, transactions)
+                
+                # Sheet 6: Insights & Recommendations
                 self._create_insights_sheet(writer, trends_data)
             
             excel_buffer.seek(0)
@@ -579,9 +583,9 @@ class ExcelService:
                 ['', ''],
                 ['CÓMO INTERPRETAR ESTE ANÁLISIS', ''],
                 ['', ''],
-                ['Tendencia INCREASING', 'El producto muestra crecimiento sostenido en ventas/compras'],
-                ['Tendencia DECREASING', 'El producto muestra declive en ventas/compras'],
-                ['Tendencia STABLE', 'El producto mantiene niveles constantes'],
+                ['Tendencia CRECIENDO', 'El producto muestra crecimiento sostenido en ventas/compras'],
+                ['Tendencia DECRECIENDO', 'El producto muestra declive en ventas/compras'],
+                ['Tendencia ESTABLE', 'El producto mantiene niveles constantes'],
                 ['', ''],
                 ['Crecimiento Semanal (%)', 'Tasa promedio de cambio semana a semana'],
                 ['Cambio Reciente (%)', 'Comparación últimas 4 semanas vs período anterior'],
@@ -605,3 +609,218 @@ class ExcelService:
             
         except Exception as e:
             logger.error(f"Error creating insights sheet: {str(e)}")
+
+    def _create_heatmap_calendar_sheet(self, writer: pd.ExcelWriter, trends_data: Dict[str, Any], transactions: List[Dict[str, Any]]):
+        """Create heatmap calendar sheet with daily transaction amounts"""
+        try:
+            from datetime import datetime, timedelta
+            from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
+            
+            # Aggregate transactions by date
+            daily_totals = {}
+            for transaction in transactions:
+                try:
+                    date_str = transaction.get('date_registry', '')
+                    if not date_str:
+                        continue
+                    
+                    date = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
+                    date_key = date.strftime('%Y-%m-%d')
+                    cost = float(transaction.get('cost', 0))
+                    
+                    if date_key not in daily_totals:
+                        daily_totals[date_key] = 0
+                    daily_totals[date_key] += cost
+                    
+                except Exception as e:
+                    logger.warning(f"Error processing transaction for heatmap: {str(e)}")
+                    continue
+            
+            if not daily_totals:
+                return
+            
+            # Get date range
+            dates = sorted(daily_totals.keys())
+            start_date = datetime.strptime(dates[0], '%Y-%m-%d')
+            end_date = datetime.strptime(dates[-1], '%Y-%m-%d')
+            
+            # Adjust to start from Monday
+            days_to_monday = start_date.weekday()
+            calendar_start = start_date - timedelta(days=days_to_monday)
+            
+            # Create calendar data
+            calendar_data = []
+            
+            # Header row with day names and date range column
+            header_row = ['Semana'] + ['L', 'M', 'X', 'J', 'V', 'S', 'D'] + ['Rango']
+            calendar_data.append(header_row)
+            
+            # Generate weeks
+            current_date = calendar_start
+            week_num = 1
+            
+            while current_date <= end_date + timedelta(days=6):
+                week_start_date = current_date
+                week_row = [f'S{week_num}']
+                
+                for day in range(7):
+                    date_key = current_date.strftime('%Y-%m-%d')
+                    
+                    # Check if date is in range and has data
+                    if current_date < start_date or current_date > end_date:
+                        week_row.append('')
+                    else:
+                        amount = daily_totals.get(date_key, 0)
+                        week_row.append(round(amount, 2) if amount > 0 else 0)
+                    
+                    current_date += timedelta(days=1)
+                
+                # Add date range for this week (start - end)
+                week_end_date = current_date - timedelta(days=1)
+                date_range = f"{week_start_date.strftime('%d/%m')} - {week_end_date.strftime('%d/%m')}"
+                week_row.append(date_range)
+                
+                calendar_data.append(week_row)
+                week_num += 1
+            
+            # Create DataFrame
+            heatmap_df = pd.DataFrame(calendar_data[1:], columns=calendar_data[0])
+            heatmap_df.to_excel(writer, sheet_name='Mapa de Calor', index=False)
+            
+            # Format the heatmap
+            worksheet = writer.sheets['Mapa de Calor']
+            
+            # Calculate color scale based on values
+            all_values = [v for v in daily_totals.values() if v > 0]
+            if all_values:
+                min_val = min(all_values)
+                max_val = max(all_values)
+                
+                # Define color gradient (light green to dark green)
+                def get_color_for_value(value):
+                    if value == 0 or value == '':
+                        return 'F0F0F0'  # Light gray for no data
+                    
+                    # Normalize value between 0 and 1
+                    if max_val > min_val:
+                        normalized = (value - min_val) / (max_val - min_val)
+                    else:
+                        normalized = 1
+                    
+                    # Color gradient from light green (E8F5E9) to dark green (1B5E20)
+                    # Using RGB interpolation
+                    r_start, g_start, b_start = 232, 245, 233  # Light green
+                    r_end, g_end, b_end = 27, 94, 32  # Dark green
+                    
+                    r = int(r_start + (r_end - r_start) * normalized)
+                    g = int(g_start + (g_end - g_start) * normalized)
+                    b = int(b_start + (b_end - b_start) * normalized)
+                    
+                    return f'{r:02X}{g:02X}{b:02X}'
+                
+                # Apply formatting
+                thin_border = Border(
+                    left=Side(style='thin', color='CCCCCC'),
+                    right=Side(style='thin', color='CCCCCC'),
+                    top=Side(style='thin', color='CCCCCC'),
+                    bottom=Side(style='thin', color='CCCCCC')
+                )
+                
+                # Format header row
+                for col in range(1, 10):  # A to I (including Rango column)
+                    cell = worksheet.cell(row=1, column=col)
+                    cell.font = Font(bold=True, size=11)
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+                    cell.fill = PatternFill(start_color='4CAF50', end_color='4CAF50', fill_type='solid')
+                    cell.font = Font(bold=True, color='FFFFFF', size=11)
+                    cell.border = thin_border
+                
+                # Format data cells
+                for row_idx in range(2, len(calendar_data) + 1):
+                    # Week label
+                    week_cell = worksheet.cell(row=row_idx, column=1)
+                    week_cell.font = Font(bold=True, size=10)
+                    week_cell.alignment = Alignment(horizontal='center', vertical='center')
+                    week_cell.fill = PatternFill(start_color='E0E0E0', end_color='E0E0E0', fill_type='solid')
+                    week_cell.border = thin_border
+                    
+                    # Day cells
+                    for col_idx in range(2, 9):  # B to H (days)
+                        cell = worksheet.cell(row=row_idx, column=col_idx)
+                        value = cell.value
+                        
+                        if value == '' or value is None:
+                            color = 'F0F0F0'
+                            cell.font = Font(size=9, color='999999')
+                        elif value == 0:
+                            color = 'FAFAFA'
+                            cell.font = Font(size=9, color='CCCCCC')
+                        else:
+                            color = get_color_for_value(float(value))
+                            # Use white text for dark backgrounds
+                            if float(value) > (min_val + (max_val - min_val) * 0.6):
+                                cell.font = Font(size=9, color='FFFFFF', bold=True)
+                            else:
+                                cell.font = Font(size=9, color='000000')
+                        
+                        cell.fill = PatternFill(start_color=color, end_color=color, fill_type='solid')
+                        cell.alignment = Alignment(horizontal='center', vertical='center')
+                        cell.border = thin_border
+                    
+                    # Date range cell (column I)
+                    range_cell = worksheet.cell(row=row_idx, column=9)
+                    range_cell.font = Font(size=9, color='666666')
+                    range_cell.alignment = Alignment(horizontal='center', vertical='center')
+                    range_cell.fill = PatternFill(start_color='F5F5F5', end_color='F5F5F5', fill_type='solid')
+                    range_cell.border = thin_border
+                
+                # Set column widths
+                worksheet.column_dimensions['A'].width = 10  # Week column
+                for col in ['B', 'C', 'D', 'E', 'F', 'G', 'H']:
+                    worksheet.column_dimensions[col].width = 12  # Day columns
+                worksheet.column_dimensions['I'].width = 15  # Date range column
+                
+                # Set row heights
+                for row in range(1, len(calendar_data) + 1):
+                    worksheet.row_dimensions[row].height = 25
+                
+                # Add legend
+                legend_start_row = len(calendar_data) + 3
+                
+                worksheet.cell(row=legend_start_row, column=1, value='LEYENDA:')
+                worksheet.cell(row=legend_start_row, column=1).font = Font(bold=True, size=10)
+                
+                worksheet.cell(row=legend_start_row + 1, column=1, value='Mínimo:')
+                worksheet.cell(row=legend_start_row + 1, column=2, value=f'{min_val:.2f} PEN')
+                worksheet.cell(row=legend_start_row + 1, column=2).fill = PatternFill(
+                    start_color='E8F5E9', end_color='E8F5E9', fill_type='solid'
+                )
+                
+                worksheet.cell(row=legend_start_row + 2, column=1, value='Máximo:')
+                worksheet.cell(row=legend_start_row + 2, column=2, value=f'{max_val:.2f} PEN')
+                worksheet.cell(row=legend_start_row + 2, column=2).fill = PatternFill(
+                    start_color='1B5E20', end_color='1B5E20', fill_type='solid'
+                )
+                worksheet.cell(row=legend_start_row + 2, column=2).font = Font(color='FFFFFF', bold=True)
+                
+                worksheet.cell(row=legend_start_row + 3, column=1, value='Sin datos:')
+                worksheet.cell(row=legend_start_row + 3, column=2, value='N/A')
+                worksheet.cell(row=legend_start_row + 3, column=2).fill = PatternFill(
+                    start_color='F0F0F0', end_color='F0F0F0', fill_type='solid'
+                )
+                
+                # Add date range info
+                info_row = legend_start_row + 5
+                worksheet.cell(row=info_row, column=1, value='Período:')
+                worksheet.cell(row=info_row, column=1).font = Font(bold=True, size=10)
+                worksheet.cell(row=info_row, column=2, value=f'{dates[0]} al {dates[-1]}')
+                
+                worksheet.cell(row=info_row + 1, column=1, value='Total días:')
+                worksheet.cell(row=info_row + 1, column=2, value=len(dates))
+                
+                worksheet.cell(row=info_row + 2, column=1, value='Total monto:')
+                worksheet.cell(row=info_row + 2, column=2, value=f'{sum(daily_totals.values()):.2f} PEN')
+                worksheet.cell(row=info_row + 2, column=2).font = Font(bold=True)
+                
+        except Exception as e:
+            logger.error(f"Error creating heatmap calendar sheet: {str(e)}")

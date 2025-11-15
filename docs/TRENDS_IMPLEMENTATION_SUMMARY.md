@@ -47,12 +47,13 @@ Comprehensive trends analysis feature with time-series analysis, growth rates, a
 - `_create_top_performers_sheet()` - Top/bottom performers
 - `_create_insights_sheet()` - Insights and recommendations
 
-**Excel Structure (5 Sheets):**
+**Excel Structure (6 Sheets):**
 1. **Resumen Ejecutivo** - Summary, top growing/declining
 2. **Detalle de Tendencias** - All products with metrics
 3. **Serie Temporal Semanal** - Week-by-week data
 4. **Top Performers** - Side-by-side comparison
-5. **Insights** - AI insights + interpretation guide
+5. **Mapa de Calor** - Visual calendar heatmap with daily amounts
+6. **Insights** - AI insights + interpretation guide
 
 ### 4. Message Service Integration
 **File:** `src/services/message_service.py`
@@ -151,6 +152,7 @@ User: "Tendencias de mis ventas"
 • Tendencias por producto
 • Serie temporal semanal
 • Top performers
+• Mapa de calor (calendario visual)
 • Insights y recomendaciones
 ```
 

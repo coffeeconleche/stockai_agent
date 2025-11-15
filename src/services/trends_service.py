@@ -206,11 +206,11 @@ class TrendsService:
         
         # Classify based on slope
         if slope > 0.1:
-            return 'increasing'
+            return 'Creciendo'
         elif slope < -0.1:
-            return 'decreasing'
+            return 'Decreciendo'
         else:
-            return 'stable'
+            return 'Estable'
     
     def _get_top_growing(self, product_trends: Dict[str, Dict[str, Any]], limit: int = 5) -> List[Dict[str, Any]]:
         """Get top growing products"""
@@ -255,9 +255,9 @@ class TrendsService:
                 return ["No hay suficientes datos para generar insights"]
             
             # Count trends
-            increasing = sum(1 for t in valid_trends if t['trend'] == 'increasing')
-            decreasing = sum(1 for t in valid_trends if t['trend'] == 'decreasing')
-            stable = sum(1 for t in valid_trends if t['trend'] == 'stable')
+            increasing = sum(1 for t in valid_trends if t['trend'] == 'Creciendo')
+            decreasing = sum(1 for t in valid_trends if t['trend'] == 'Decreciendo')
+            stable = sum(1 for t in valid_trends if t['trend'] == 'Estable')
             
             total = len(valid_trends)
             

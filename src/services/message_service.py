@@ -465,7 +465,7 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
                 return
             
             # Generate Excel with trends analysis
-            excel_url, filename = self.excel_service.generate_trends_excel(trends_data, query_params, phone_number)
+            excel_url, filename = self.excel_service.generate_trends_excel(trends_data, query_params, phone_number, transactions)
             
             if excel_url and filename:
                 # Send document attachment
@@ -489,6 +489,7 @@ Por favor, visita https://stockai.cloud/ para registrarte."""
                     insights_msg += f"• Tendencias por producto\n"
                     insights_msg += f"• Serie temporal semanal\n"
                     insights_msg += f"• Top performers\n"
+                    insights_msg += f"• Mapa de calor (calendario)\n"
                     insights_msg += f"• Insights y recomendaciones"
                     
                     self.whatsapp_service.send_text_message(phone_number, insights_msg)

@@ -49,7 +49,7 @@ Users can request trends analysis by using keywords like:
 
 ## Excel Report Structure
 
-The trends analysis generates a comprehensive 5-sheet Excel workbook:
+The trends analysis generates a comprehensive 6-sheet Excel workbook:
 
 ### Sheet 1: Resumen Ejecutivo (Executive Summary)
 - Analysis type and period
@@ -81,7 +81,16 @@ For each product:
 - Top 5 declining products
 - Growth rates and total costs
 
-### Sheet 5: Insights
+### Sheet 5: Mapa de Calor (Heatmap Calendar)
+- **Visual calendar heatmap** showing daily transaction amounts
+- **Calendar format**: Rows of 7 days (L, M, X, J, V, S, D)
+- **Color gradient**: Light green (low) to dark green (high)
+- **90-day view**: Complete period visualization
+- **Legend**: Min/max values and color scale
+- **Summary stats**: Total days, total amount
+- **Easy pattern recognition**: Identify busy days, slow days, weekly patterns
+
+### Sheet 6: Insights
 - AI-generated insights
 - Interpretation guide
 - General recommendations
@@ -275,6 +284,7 @@ User: "Análisis de tendencias de mis ventas"
 • Tendencias por producto
 • Serie temporal semanal
 • Top performers
+• Mapa de calor (calendario visual)
 • Insights y recomendaciones
 ```
 
