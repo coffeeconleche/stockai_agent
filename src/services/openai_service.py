@@ -421,15 +421,21 @@ Ejemplos de JSON:
 
 FECHA ACTUAL: {current_date_str} (Perú, GMT-5)
 
-Tu tarea es determinar si el mensaje es una SOLICITUD DE REPORTE y extraer los parámetros de consulta.
+Tu tarea es determinar si el mensaje es una SOLICITUD DE REPORTE, un SALUDO, o ninguno de los dos, y extraer los parámetros de consulta.
 
 Parámetros a extraer:
-1. is_query: true si es una solicitud de reporte, false si no lo es
-2. is_trend_analysis: true si solicita análisis de tendencias/trends, false si no
-3. transaction_type: 0 para compras, 1 para ventas, null para ambos
-4. products: Lista de productos en singular (ej: ["tomate", "manzana"])
-5. date_from: Fecha inicio en formato YYYY-MM-DD (null si no se especifica)
-6. date_to: Fecha fin en formato YYYY-MM-DD (null si no se especifica)
+1. is_greeting: true si es un saludo (hola, buenos días, buenas tardes, buenas noches, hey, qué tal, etc.), false si no lo es
+2. is_query: true si es una solicitud de reporte, false si no lo es
+3. is_trend_analysis: true si solicita análisis de tendencias/trends, false si no
+4. transaction_type: 0 para compras, 1 para ventas, null para ambos
+5. products: Lista de productos en singular (ej: ["tomate", "manzana"])
+6. date_from: Fecha inicio en formato YYYY-MM-DD (null si no se especifica)
+7. date_to: Fecha fin en formato YYYY-MM-DD (null si no se especifica)
+
+DETECCIÓN DE SALUDOS:
+- Si el mensaje es un saludo, marca is_greeting: true
+- Los saludos pueden estar solos o con emojis
+- Ejemplos: "hola", "Hola!", "Buenos días", "hey", "Buenas tardes 👋"
 
 CORRECCIÓN DE ERRORES ORTOGRÁFICOS:
 - **VERIFICA** que los productos mencionados sean productos reales que existen
@@ -470,31 +476,37 @@ IMPORTANTE:
 - Siempre responde en formato JSON válido (no devuelvas el tag de json como código, solo texto)
 
 Ejemplos:
+- "hola"
+  → {{"is_greeting": true, "is_query": false, "is_trend_analysis": false}}
+
+- "Buenos días"
+  → {{"is_greeting": true, "is_query": false, "is_trend_analysis": false}}
+
 - "Necesito saber mi reporte de ventas de tomate y manzanas del mes de agosto 2024"
-  → {{"is_query": true, "is_trend_analysis": false, "transaction_type": 1, "products": ["tomate", "manzana"], "date_from": "2024-08-01", "date_to": "2024-08-31"}}
+  → {{"is_greeting": false, "is_query": true, "is_trend_analysis": false, "transaction_type": 1, "products": ["tomate", "manzana"], "date_from": "2024-08-01", "date_to": "2024-08-31"}}
 
 - "Cuánto vendí de maní esta semana"
-  → {{"is_query": true, "is_trend_analysis": false, "transaction_type": 1, "products": ["mani"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
+  → {{"is_greeting": false, "is_query": true, "is_trend_analysis": false, "transaction_type": 1, "products": ["mani"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
 
 - "Mis ventas de azúcar y café de los últimos 30 días"
-  → {{"is_query": true, "is_trend_analysis": false, "transaction_type": 1, "products": ["azucar", "cafe"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
+  → {{"is_greeting": false, "is_query": true, "is_trend_analysis": false, "transaction_type": 1, "products": ["azucar", "cafe"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
 
 - "Dame el resumen de todas mis compras"
-  → {{"is_query": true, "is_trend_analysis": false, "transaction_type": 0, "products": [], "date_from": null, "date_to": null}}
+  → {{"is_greeting": false, "is_query": true, "is_trend_analysis": false, "transaction_type": 0, "products": [], "date_from": null, "date_to": null}}
 
 - "Muéstrame las tendencias de ventas de maní"
-  → {{"is_query": true, "is_trend_analysis": true, "transaction_type": 1, "products": ["mani"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
+  → {{"is_greeting": false, "is_query": true, "is_trend_analysis": true, "transaction_type": 1, "products": ["mani"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
   (Nota: date_from será 90 días antes de hoy)
 
 - "Análisis de tendencias de mis compras"
-  → {{"is_query": true, "is_trend_analysis": true, "transaction_type": 0, "products": [], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
+  → {{"is_greeting": false, "is_query": true, "is_trend_analysis": true, "transaction_type": 0, "products": [], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
   (Nota: date_from será 90 días antes de hoy)
 
 - "Cómo van mis ventas de azúcar y café"
-  → {{"is_query": true, "is_trend_analysis": true, "transaction_type": 1, "products": ["azucar", "cafe"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
+  → {{"is_greeting": false, "is_query": true, "is_trend_analysis": true, "transaction_type": 1, "products": ["azucar", "cafe"], "date_from": "YYYY-MM-DD", "date_to": "{current_date_str}"}}
 
 - "Vendí 5 camisas a 25 soles"
-  → {{"is_query": false, "is_trend_analysis": false}}"""
+  → {{"is_greeting": false, "is_query": false, "is_trend_analysis": false}}"""
 
 
             user_prompt = f"Analiza este mensaje: '{text_content}'"
@@ -550,8 +562,8 @@ Ejemplos:
                 
             except json.JSONDecodeError:
                 logger.error(f"Failed to parse Deepseek query JSON response: {result_text}")
-                return {"is_query": False, "is_trend_analysis": False}
+                return {"is_greeting": False, "is_query": False, "is_trend_analysis": False}
                 
         except Exception as e:
             logger.error(f"Error processing query with Deepseek: {str(e)}")
-            return {"is_query": False}
+            return {"is_greeting": False, "is_query": False}

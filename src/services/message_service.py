@@ -734,8 +734,14 @@ Ejemplo: "Vendí 5 camisas rojas a 25 soles cada una" """
             processing_msg = self.templates.get_processing_message(user.language)
             self.whatsapp_service.send_text_message(phone_number, processing_msg)
             
-            # First, check if this is a query request
+            # First, check if this is a query request or greeting
             query_check = self.openai_service.process_query_request(text_content)
+            
+            if query_check.get('is_greeting'):
+                # Handle greeting - send welcome message
+                welcome_msg = self.templates.get_welcome_message(user.language)
+                self.whatsapp_service.send_text_message(phone_number, welcome_msg)
+                return
             
             if query_check.get('is_query'):
                 # Handle query request
@@ -835,8 +841,14 @@ Ejemplo: "Vendí 5 camisas rojas a 25 soles cada una" """
                 transcribed_text = self.openai_service.transcribe_audio(audio_file_path)
                 
                 if transcribed_text:
-                    # First, check if this is a query request
+                    # First, check if this is a query request or greeting
                     query_check = self.openai_service.process_query_request(transcribed_text)
+                    
+                    if query_check.get('is_greeting'):
+                        # Handle greeting - send welcome message
+                        welcome_msg = self.templates.get_welcome_message(user.language)
+                        self.whatsapp_service.send_text_message(phone_number, welcome_msg)
+                        return
                     
                     if query_check.get('is_query'):
                         # Handle query request
